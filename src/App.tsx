@@ -107,12 +107,24 @@ const parseWeightValue = (w: string): number | null => {
 // Moltiplica i numeri negli ingredienti per un dato fattore
 const multiplyIngredients = (text: string, multiplier: number): string => {
   if (!text || multiplier === 1) return text;
-  return text.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
+
+  // Proteggi il contenuto tra parentesi (es. W 300–360, PN 260)
+  const placeholders: string[] = [];
+  const protected_text = text.replace(/\([^)]*\)/g, (match) => {
+    placeholders.push(match);
+    return `§§${placeholders.length - 1}§§`;
+  });
+
+  // Moltiplica solo numeri NON preceduti da una lettera (codici tecnici tipo W300, P260)
+  const multiplied = protected_text.replace(/(?<![a-zA-Z])(\d+(?:[.,]\d+)?)/g, (match) => {
     const num = parseFloat(match.replace(',', '.'));
     const result = num * multiplier;
     if (Number.isInteger(result)) return String(result);
     return String(Math.round(result * 10) / 10).replace('.', ',');
   });
+
+  // Ripristina il contenuto delle parentesi
+  return multiplied.replace(/§§(\d+)§§/g, (_, i) => placeholders[parseInt(i)]);
 };
 
 // Renderizza una singola riga ingrediente con formattazione smart
