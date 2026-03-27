@@ -313,7 +313,7 @@ export default function ChefBook() {
   const [currentServings, setCurrentServings] = useState(1);
   const [currentWeightInput, setCurrentWeightInput] = useState(''); // peso modificabile in dettaglio
   const fileRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const types = Array.from(new Set(recipes.map(r => r.type).filter(Boolean)));
   const authors = Array.from(new Set(recipes.map(r => r.author).filter(Boolean)));
@@ -329,14 +329,28 @@ export default function ChefBook() {
   };
 
   useEffect(() => {
-    (async () => {
-      const u = localStorage.getItem('cb-user');
-      if (u) { setUsername(u); await load(); setView('home'); }
-      else setView('login');
-      pollRef.current = setInterval(() => load(true), 30000);
-    })();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+  (async () => {
+    const u = localStorage.getItem('cb-user');
+
+    if (u) {
+      setUsername(u);
+      await load();      // carica una sola volta
+      setView('home');
+    } else {
+      setView('login');
+    }
+  })();
+}, []);
+  
+  //useEffect(() => {
+   // (async () => {
+     // const u = localStorage.getItem('cb-user');
+      //if (u) { setUsername(u); await load(); setView('home'); }
+      //else setView('login');
+      //pollRef.current = setInterval(() => load(true), 30000);
+    //})();
+    //return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  //}, []);
 
   const handleLogin = async () => {
     if (!nameInput.trim()) return;
