@@ -108,23 +108,32 @@ const parseWeightValue = (w: string): number | null => {
 const multiplyIngredients = (text: string, multiplier: number): string => {
   if (!text || multiplier === 1) return text;
 
-  // Proteggi il contenuto tra parentesi (es. W 300–360, PN 260)
-  const placeholders: string[] = [];
+  // Usa token SOLO con lettere — mai numeri — così la regex non li tocca
+  const map = new Map<string, string>();
+  let idx = 0;
+  const toToken = (i: number) => {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    return `PHOLD${letters[Math.floor(i / 26)] ?? ''}${letters[i % 26]}`;
+  };
+
   const protected_text = text.replace(/\([^)]*\)/g, (match) => {
-    placeholders.push(match);
-    return `§§${placeholders.length - 1}§§`;
+    const token = toToken(idx++);
+    map.set(token, match);
+    return token;
   });
 
-  // Moltiplica solo numeri NON preceduti da una lettera (codici tecnici tipo W300, P260)
-  const multiplied = protected_text.replace(/(?<![a-zA-Z])(\d+(?:[.,]\d+)?)/g, (match) => {
+  // Moltiplica solo numeri NON preceduti da lettera o underscore
+  const multiplied = protected_text.replace(/(?<![a-zA-Z_])(\d+(?:[.,]\d+)?)/g, (match) => {
     const num = parseFloat(match.replace(',', '.'));
     const result = num * multiplier;
     if (Number.isInteger(result)) return String(result);
     return String(Math.round(result * 10) / 10).replace('.', ',');
   });
 
-  // Ripristina il contenuto delle parentesi
-  return multiplied.replace(/§§(\d+)§§/g, (_, i) => placeholders[parseInt(i)]);
+  // Ripristina i placeholder
+  let out = multiplied;
+  map.forEach((val, token) => { out = out.replaceAll(token, val); });
+  return out;
 };
 
 // Renderizza una singola riga ingrediente con formattazione smart
@@ -687,14 +696,26 @@ export default function ChefBook() {
 
                 {/* Controlli: porzioni + peso */}
                 <div className="servings-weight-row" style={{ display: 'flex', gap: 20, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* Porzioni */}
+                  {/* Porzioni — input decimale + pulsanti */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const }}>Porzioni</span>
                     <div style={{ display: 'flex', alignItems: 'center', border: `1.5px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                      <button onClick={() => setCurrentServings(s => Math.max(1, s - 1))}
+                      <button
+                        onClick={() => setCurrentServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.muted, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                      <div style={{ width: 32, textAlign: 'center', fontWeight: 700, fontSize: 14, color: c.text, borderLeft: `1px solid ${c.border}`, borderRight: `1px solid ${c.border}`, lineHeight: '30px' }}>{currentServings}</div>
-                      <button onClick={() => setCurrentServings(s => s + 1)}
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.5"
+                        value={currentServings}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v) && v > 0) setCurrentServings(Math.round(v * 10) / 10);
+                        }}
+                        style={{ width: 46, height: 30, border: 'none', background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: 0 }}
+                      />
+                      <button
+                        onClick={() => setCurrentServings(s => Math.round((s + 0.5) * 10) / 10)}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.accent, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                     </div>
                   </div>
