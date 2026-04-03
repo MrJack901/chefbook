@@ -96,7 +96,6 @@ const dbToSteps = (procedure: string): string[] => {
   return [procedure];
 };
 
-// Estrae il valore numerico da una stringa di peso (es. "750g" → 750, "1.5 kg" → 1.5)
 const parseWeightValue = (w: string): number | null => {
   if (!w) return null;
   const m = w.match(/(\d+(?:[.,]\d+)?)/);
@@ -104,39 +103,39 @@ const parseWeightValue = (w: string): number | null => {
   return parseFloat(m[1].replace(',', '.'));
 };
 
-// Moltiplica i numeri negli ingredienti per un dato fattore
+// ─── MOLTIPLICA INGREDIENTI (token solo lettere, mai numeri) ───────
 const multiplyIngredients = (text: string, multiplier: number): string => {
   if (!text || multiplier === 1) return text;
 
-  // Usa token SOLO con lettere — mai numeri — così la regex non li tocca
+  // Genera token composti solo da lettere — la regex numerica non li toccherà mai
   const map = new Map<string, string>();
   let idx = 0;
-  const toToken = (i: number) => {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    return `PHOLD${letters[Math.floor(i / 26)] ?? ''}${letters[i % 26]}`;
-  };
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const toToken = (i: number) =>
+    `PHOLD${letters[Math.floor(i / 26) % 26]}${letters[i % 26]}`;
 
-  const protected_text = text.replace(/\([^)]*\)/g, (match) => {
+  // Proteggi tutto il contenuto tra parentesi tonde
+  const protectedText = text.replace(/\([^)]*\)/g, (match) => {
     const token = toToken(idx++);
     map.set(token, match);
     return token;
   });
 
-  // Moltiplica solo numeri NON preceduti da lettera o underscore
-  const multiplied = protected_text.replace(/(?<![a-zA-Z_])(\d+(?:[.,]\d+)?)/g, (match) => {
+  // Moltiplica solo i numeri NON preceduti da una lettera (es. W300, P260 rimangono intatti)
+  const multiplied = protectedText.replace(/(?<![a-zA-Z])(\d+(?:[.,]\d+)?)/g, (match) => {
     const num = parseFloat(match.replace(',', '.'));
     const result = num * multiplier;
     if (Number.isInteger(result)) return String(result);
     return String(Math.round(result * 10) / 10).replace('.', ',');
   });
 
-  // Ripristina i placeholder
+  // Ripristina il contenuto delle parentesi
   let out = multiplied;
   map.forEach((val, token) => { out = out.replaceAll(token, val); });
   return out;
 };
 
-// Renderizza una singola riga ingrediente con formattazione smart
+// ─── RENDERING RIGA INGREDIENTE ────────────────────────────────────
 function IngredientLine({ raw, c }: { raw: string; c: Record<string, string> }) {
   const trimmed = raw.trim();
   if (trimmed === '') return <div style={{ height: 8 }} />;
@@ -147,7 +146,7 @@ function IngredientLine({ raw, c }: { raw: string; c: Record<string, string> }) 
 
   if (isSection) {
     return (
-      <div style={{ fontWeight: 700, fontSize: 14, color: c.text, marginTop: 12, marginBottom: 2, textAlign: 'left' }}>
+      <div style={{ fontWeight: 700, fontSize: 14, color: '#2C2010', marginTop: 12, marginBottom: 2, textAlign: 'left' }}>
         {trimmed}
       </div>
     );
@@ -188,7 +187,7 @@ const emptyForm = (author: string): FormState => ({
   photo_url: '', notes: '', cost: '', author
 });
 
-// ─── COMPONENTE EDITOR PROCEDIMENTO ────────────────────────────────
+// ─── EDITOR PROCEDIMENTO ───────────────────────────────────────────
 
 interface ProcedureEditorProps {
   steps: string[];
@@ -262,7 +261,7 @@ function ProcedureEditor({ steps, onChange, inputStyle, c }: ProcedureEditorProp
   );
 }
 
-// ─── COMPONENTE AUTOCOMPLETE ────────────────────────────────────────
+// ─── AUTOCOMPLETE ──────────────────────────────────────────────────
 
 interface AutocompleteInputProps {
   value: string;
@@ -318,11 +317,9 @@ export default function ChefBook() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [syncing, setSyncing] = useState(false);
-  // Moltiplicatori nella vista dettaglio
   const [currentServings, setCurrentServings] = useState(1);
-  const [currentWeightInput, setCurrentWeightInput] = useState(''); // peso modificabile in dettaglio
+  const [currentWeightInput, setCurrentWeightInput] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
-  // const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const types = Array.from(new Set(recipes.map(r => r.type).filter(Boolean)));
   const authors = Array.from(new Set(recipes.map(r => r.author).filter(Boolean)));
@@ -338,28 +335,12 @@ export default function ChefBook() {
   };
 
   useEffect(() => {
-  (async () => {
-    const u = localStorage.getItem('cb-user');
-
-    if (u) {
-      setUsername(u);
-      await load();      // carica una sola volta
-      setView('home');
-    } else {
-      setView('login');
-    }
-  })();
-}, []);
-  
-  //useEffect(() => {
-   // (async () => {
-     // const u = localStorage.getItem('cb-user');
-      //if (u) { setUsername(u); await load(); setView('home'); }
-      //else setView('login');
-      //pollRef.current = setInterval(() => load(true), 30000);
-    //})();
-    //return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  //}, []);
+    (async () => {
+      const u = localStorage.getItem('cb-user');
+      if (u) { setUsername(u); await load(); setView('home'); }
+      else setView('login');
+    })();
+  }, []);
 
   const handleLogin = async () => {
     if (!nameInput.trim()) return;
@@ -449,7 +430,6 @@ export default function ChefBook() {
       (r.author || '').toLowerCase().includes(search.toLowerCase())
     );
 
-  // ─── PALETTE ──────────────────────────────────────────────────────
   const c: Record<string, string> = {
     bg: '#F7F3EE', card: '#FFFFFF', card2: '#FDF9F4',
     accent: '#A8621A', accentLight: '#F2E4D0', accentMid: '#C4862A',
@@ -481,12 +461,14 @@ export default function ChefBook() {
     ::-webkit-scrollbar-track { background: #F7F3EE; }
     ::-webkit-scrollbar-thumb { background: #D9CFBF; border-radius: 3px; }
     input, textarea { outline: none; font-family: 'Nunito', sans-serif; text-align: left; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
     .hcard { transition: transform .25s, box-shadow .25s !important; }
     .hcard:hover { transform: translateY(-4px) !important; box-shadow: 0 12px 32px rgba(100,70,30,0.13) !important; }
     .hbtn:hover { opacity: .82; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; display: inline-block; }
-    /* Mobile search bar row - nascosta su desktop */
     .mobile-search { display: none !important; }
     @media (max-width: 640px) {
       .desktop-search { display: none !important; }
@@ -539,11 +521,8 @@ export default function ChefBook() {
   if (view === 'home') return (
     <div style={A.wrap}>
       <style>{css}</style>
-
-      {/* Header */}
       <div style={A.header}>
         <div style={A.logo}>👨‍🍳 Chef's Book</div>
-        {/* Desktop: search inline nell'header */}
         <div className="desktop-search" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
           <input style={{ ...A.input, maxWidth: 200, padding: '7px 12px', fontSize: 13 }} placeholder="🔍 Cerca ricetta..." value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
           <button className="hbtn" style={{ ...A.btnO, padding: '7px 11px', fontSize: 16 }} onClick={() => load()}>
@@ -552,14 +531,11 @@ export default function ChefBook() {
           <span style={{ color: c.muted, fontSize: 12, whiteSpace: 'nowrap' }}>👤 <strong style={{ color: c.text }}>{username}</strong></span>
           <button className="hbtn" style={A.btn} onClick={newRecipe}>+ Nuova ricetta</button>
         </div>
-        {/* Mobile: solo logo + bottone nuova */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: c.muted, fontSize: 12 }} className="desktop-search">👤 {username}</span>
           <button className="hbtn mobile-search" style={{ ...A.btn }}>+ Nuova</button>
         </div>
       </div>
 
-      {/* Mobile: barra ricerca su riga separata */}
       <div className="mobile-search" style={{ display: 'none' }}>
         <input style={{ ...A.input, fontSize: 14 }} placeholder="🔍 Cerca ricetta o autore..." value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
         <button className="hbtn" style={{ ...A.btnO, padding: '9px 11px', fontSize: 16, flexShrink: 0 }} onClick={() => load()}>
@@ -568,7 +544,6 @@ export default function ChefBook() {
         <button className="hbtn" style={{ ...A.btn, flexShrink: 0 }} onClick={newRecipe}>+ Nuova</button>
       </div>
 
-      {/* Tabs tipologie */}
       <div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', gap: 2, overflowX: 'auto' }}>
         {['tutti', ...types].map(t => (
           <button key={t} onClick={() => setFilter(t)} style={{
@@ -629,7 +604,6 @@ export default function ChefBook() {
     const baseServings = r.servings || 1;
     const baseWeight = parseWeightValue(r.weight);
 
-    // Calcola moltiplicatore combinato: porzioni × peso
     let multiplier = currentServings / baseServings;
     if (baseWeight !== null) {
       const currentWeightVal = parseWeightValue(currentWeightInput);
@@ -640,11 +614,8 @@ export default function ChefBook() {
 
     const multipliedIngredients = multiplyIngredients(r.ingredients, multiplier);
     const parsedSteps = dbToSteps(r.procedure);
-
-    // Unità di misura estratta dal peso base (es. "g", "kg")
     const weightUnit = r.weight ? r.weight.replace(/[\d.,\s]/g, '').trim() : '';
-
-    const isModified = multiplier !== 1;
+    const isModified = Math.abs(multiplier - 1) > 0.001;
 
     return (
       <div style={A.wrap}>
@@ -652,7 +623,7 @@ export default function ChefBook() {
         <div style={A.header}>
           <button className="hbtn" style={A.btnO} onClick={() => setView('home')}>← Ricette</button>
           <div className="detail-acts" style={{ display: 'flex', gap: 8 }}>
-            <button className="hbtn" style={A.btnO} onClick={() => duplicateRecipe(r)} title="Duplica ricetta">⧉ Duplica</button>
+            <button className="hbtn" style={A.btnO} onClick={() => duplicateRecipe(r)}>⧉ Duplica</button>
             <button className="hbtn" style={A.btnO} onClick={() => editRecipe(r)}>✏️ Modifica</button>
             <button className="hbtn" style={A.btnRed} onClick={() => { if (window.confirm(`Eliminare "${r.title}"?`)) handleDelete(r.id); }}>🗑</button>
           </div>
@@ -665,7 +636,6 @@ export default function ChefBook() {
           {r.type && <div style={{ ...A.tag, display: 'inline-block', marginBottom: 10 }}>{r.type}</div>}
           <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 34, fontWeight: 700, lineHeight: 1.15, marginBottom: 18, color: c.text }}>{r.title}</h1>
 
-          {/* Meta strip */}
           <div className="meta-strip" style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 22, background: c.accentLight, borderRadius: 12, overflow: 'hidden', border: `1px solid ${c.border}` }}>
             {([
               r.creation_time ? { icon: '⏱', label: 'Tempo', value: r.creation_time } : null,
@@ -681,10 +651,8 @@ export default function ChefBook() {
             ))}
           </div>
 
-          {/* Ingredienti con controlli porzioni + peso */}
           {r.ingredients && (
             <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 16 }}>
-              {/* Header ingredienti */}
               <div style={{ marginBottom: 14, paddingBottom: 12, borderBottom: `2px solid ${c.accentLight}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 700, color: c.accent }}>Ingredienti</div>
@@ -694,33 +662,33 @@ export default function ChefBook() {
                   )}
                 </div>
 
-                {/* Controlli: porzioni + peso */}
                 <div className="servings-weight-row" style={{ display: 'flex', gap: 20, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* Porzioni — input decimale + pulsanti */}
+
+                  {/* ── PORZIONI con input decimale ── */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const }}>Porzioni</span>
                     <div style={{ display: 'flex', alignItems: 'center', border: `1.5px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
                       <button
-                        onClick={() => setCurrentServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
+                        onClick={() => setCurrentServings(s => Math.max(0.1, Math.round((s - 0.1) * 10) / 10))}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.muted, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                       <input
                         type="number"
                         min="0.1"
-                        step="0.5"
+                        step="0.1"
                         value={currentServings}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           if (!isNaN(v) && v > 0) setCurrentServings(Math.round(v * 10) / 10);
                         }}
-                        style={{ width: 46, height: 30, border: 'none', background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: 0 }}
+                        style={{ width: 46, height: 30, border: 'none', borderLeft: `1px solid ${c.border}`, borderRight: `1px solid ${c.border}`, background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: 0 }}
                       />
                       <button
-                        onClick={() => setCurrentServings(s => Math.round((s + 0.5) * 10) / 10)}
+                        onClick={() => setCurrentServings(s => Math.round((s + 0.1) * 10) / 10)}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.accent, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                     </div>
                   </div>
 
-                  {/* Peso modificabile (solo se la ricetta ha un peso) */}
+                  {/* ── PESO modificabile ── */}
                   {baseWeight !== null && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const }}>Peso</span>
@@ -728,6 +696,7 @@ export default function ChefBook() {
                         <input
                           type="number"
                           min="1"
+                          step="1"
                           value={parseWeightValue(currentWeightInput) ?? ''}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => {
                             const num = e.target.value;
@@ -740,7 +709,7 @@ export default function ChefBook() {
                     </div>
                   )}
 
-                  {/* Indicatore moltiplicatore */}
+                  {/* ── Badge moltiplicatore ── */}
                   {isModified && (
                     <div style={{ background: c.accentLight, borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: c.accent }}>
                       ×{Math.round(multiplier * 100) / 100}
@@ -749,7 +718,6 @@ export default function ChefBook() {
                 </div>
               </div>
 
-              {/* Lista ingredienti renderizzata */}
               <div style={{ textAlign: 'left' }}>
                 {multipliedIngredients.split('\n').map((line, i) => (
                   <IngredientLine key={i} raw={line} c={c} />
@@ -758,7 +726,6 @@ export default function ChefBook() {
             </div>
           )}
 
-          {/* Procedimento */}
           {parsedSteps.some(s => s.trim()) && (
             <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 16 }}>
               <div style={A.secTitle}>Procedimento</div>
@@ -771,7 +738,6 @@ export default function ChefBook() {
             </div>
           )}
 
-          {/* Note */}
           {r.notes && (
             <div style={{ background: '#FFFBF0', border: `1px solid #EDD080`, borderLeft: `4px solid ${c.accentMid}`, borderRadius: '0 12px 12px 0', padding: '16px 20px' }}>
               <div style={{ ...A.label, color: c.accentMid, marginBottom: 8 }}>📝 Note</div>
@@ -802,7 +768,6 @@ export default function ChefBook() {
         <div style={{ maxWidth: 780, margin: '0 auto', padding: '22px 16px 70px' }}>
           {error && <div style={A.err}>{error}</div>}
 
-          {/* Info base */}
           <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 14 }}>
             <div style={A.secTitle}>Informazioni di base</div>
             <div style={A.field}>
@@ -855,7 +820,6 @@ export default function ChefBook() {
             </div>
           </div>
 
-          {/* Foto */}
           <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 14 }}>
             <div style={A.secTitle}>Foto copertina</div>
             <input type="file" accept="image/*" ref={fileRef} style={{ display: 'none' }} onChange={handlePhotoSelect} />
@@ -877,7 +841,6 @@ export default function ChefBook() {
             )}
           </div>
 
-          {/* Ingredienti */}
           <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 14 }}>
             <div style={A.secTitle}>Ingredienti</div>
             <div style={{ background: c.accentLight, borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: c.accent, lineHeight: 1.6 }}>
@@ -888,7 +851,6 @@ export default function ChefBook() {
               value={form.ingredients} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => sf('ingredients', e.target.value)} />
           </div>
 
-          {/* Procedimento */}
           <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 14 }}>
             <div style={A.secTitle}>Procedimento</div>
             <div style={{ color: c.muted, fontSize: 12, marginBottom: 12 }}>
@@ -897,7 +859,6 @@ export default function ChefBook() {
             <ProcedureEditor steps={steps} onChange={setSteps} inputStyle={A.input} c={c} />
           </div>
 
-          {/* Note */}
           <div style={{ ...A.cardBox, padding: '20px 22px', marginBottom: 28 }}>
             <div style={A.secTitle}>Note</div>
             <textarea style={{ ...A.input, minHeight: 95, lineHeight: 1.9, fontStyle: 'italic' }}
