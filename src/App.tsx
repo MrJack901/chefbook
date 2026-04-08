@@ -6,14 +6,18 @@ const SUPABASE_URL = 'https://eotxguvsrgbrgdaxhfwz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdHhndXZzcmdicmdkYXhoZnd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjY3ODMsImV4cCI6MjA4ODgwMjc4M30.GthcPCt_JyxFpK0AWGVnEr2cqjjLx7bnKcvm-FtKuU4';
 // ──────────────────────────────────────────────────────────────────
 
-const dbHeaders: Record<string, string> = {
-  'apikey': SUPABASE_ANON_KEY,
-  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-  'Content-Type': 'application/json',
-  'Prefer': 'return=representation'
-};
-
 // ─── TIPI ──────────────────────────────────────────────────────────
+
+interface User {
+  id: string;
+  email: string;
+  user_metadata?: { display_name?: string };
+}
+
+interface Session {
+  access_token: string;
+  user: User;
+}
 
 interface Recipe {
   id: string;
@@ -55,6 +59,45 @@ interface MetaItem {
   accent?: boolean;
 }
 
+// ─── AUTH API ──────────────────────────────────────────────────────
+
+const authApi = {
+  signIn: async (email: string, password: string): Promise<{ session: Session | null; error: string | null }> => {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const j = await r.json();
+    if (!r.ok) return { session: null, error: j.error_description || j.msg || 'Credenziali non valide' };
+    return { session: j as Session, error: null };
+  },
+
+  signOut: async (token: string): Promise<void> => {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` }
+    });
+  },
+
+  getUser: async (token: string): Promise<User | null> => {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` }
+    });
+    if (!r.ok) return null;
+    return r.json();
+  }
+};
+
+// ─── DB HEADERS (con token dinamico) ──────────────────────────────
+
+const makeHeaders = (token: string): Record<string, string> => ({
+  'apikey': SUPABASE_ANON_KEY,
+  'Authorization': `Bearer ${token}`,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation'
+});
+
 // ─── UTILITIES ────────────────────────────────────────────────────
 
 const compressImage = (file: File): Promise<Blob> => new Promise((resolve) => {
@@ -72,12 +115,12 @@ const compressImage = (file: File): Promise<Blob> => new Promise((resolve) => {
   img.src = url;
 });
 
-const uploadPhoto = async (file: File): Promise<string> => {
+const uploadPhoto = async (file: File, token: string): Promise<string> => {
   const blob = await compressImage(file);
   const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/recipe-photos/${name}`, {
     method: 'POST',
-    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'image/jpeg' },
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg' },
     body: blob
   });
   if (!res.ok) throw new Error('Upload foto fallito');
@@ -103,25 +146,20 @@ const parseWeightValue = (w: string): number | null => {
   return parseFloat(m[1].replace(',', '.'));
 };
 
-// ─── MOLTIPLICA INGREDIENTI (token solo lettere, mai numeri) ───────
 const multiplyIngredients = (text: string, multiplier: number): string => {
   if (!text || multiplier === 1) return text;
-
-  // Genera token composti solo da lettere — la regex numerica non li toccherà mai
   const map = new Map<string, string>();
   let idx = 0;
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const toToken = (i: number) =>
     `PHOLD${letters[Math.floor(i / 26) % 26]}${letters[i % 26]}`;
 
-  // Proteggi tutto il contenuto tra parentesi tonde
   const protectedText = text.replace(/\([^)]*\)/g, (match) => {
     const token = toToken(idx++);
     map.set(token, match);
     return token;
   });
 
-  // Moltiplica solo i numeri NON preceduti da una lettera (es. W300, P260 rimangono intatti)
   const multiplied = protectedText.replace(/(?<![a-zA-Z])(\d+(?:[.,]\d+)?)/g, (match) => {
     const num = parseFloat(match.replace(',', '.'));
     const result = num * multiplier;
@@ -129,29 +167,20 @@ const multiplyIngredients = (text: string, multiplier: number): string => {
     return String(Math.round(result * 10) / 10).replace('.', ',');
   });
 
-  // Ripristina il contenuto delle parentesi
   let out = multiplied;
-  map.forEach((val, token) => { out = out.replaceAll(token, val); });
+  map.forEach((val, token) => { out = out.split(token).join(val); });
   return out;
 };
 
-// ─── RENDERING RIGA INGREDIENTE ────────────────────────────────────
 function IngredientLine({ raw, c }: { raw: string; c: Record<string, string> }) {
   const trimmed = raw.trim();
   if (trimmed === '') return <div style={{ height: 8 }} />;
-
   const startsWithDash = /^[-–]/.test(trimmed);
   const startsWithNumber = /^\d/.test(trimmed);
   const isSection = !startsWithDash && !startsWithNumber;
-
-  if (isSection) {
-    return (
-      <div style={{ fontWeight: 700, fontSize: 14, color: '#2C2010', marginTop: 12, marginBottom: 2, textAlign: 'left' }}>
-        {trimmed}
-      </div>
-    );
-  }
-
+  if (isSection) return (
+    <div style={{ fontWeight: 700, fontSize: 14, color: '#2C2010', marginTop: 12, marginBottom: 2, textAlign: 'left' }}>{trimmed}</div>
+  );
   const content = trimmed.replace(/^[-–]\s*/, '');
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', textAlign: 'left' }}>
@@ -161,25 +190,25 @@ function IngredientLine({ raw, c }: { raw: string; c: Record<string, string> }) 
   );
 }
 
-// ─── API SUPABASE ──────────────────────────────────────────────────
+// ─── API RICETTE ───────────────────────────────────────────────────
 
-const api = {
+const makeApi = (token: string) => ({
   list: async (): Promise<Recipe[]> => {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes?order=created_at.desc`, { headers: dbHeaders });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes?order=created_at.desc`, { headers: makeHeaders(token) });
     return r.json();
   },
   insert: async (data: Partial<Recipe>): Promise<Recipe> => {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes`, { method: 'POST', headers: dbHeaders, body: JSON.stringify(data) });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes`, { method: 'POST', headers: makeHeaders(token), body: JSON.stringify(data) });
     const j = await r.json(); return Array.isArray(j) ? j[0] : j;
   },
   update: async (id: string, data: Partial<Recipe>): Promise<Recipe> => {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes?id=eq.${id}`, { method: 'PATCH', headers: dbHeaders, body: JSON.stringify(data) });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/recipes?id=eq.${id}`, { method: 'PATCH', headers: makeHeaders(token), body: JSON.stringify(data) });
     const j = await r.json(); return Array.isArray(j) ? j[0] : j;
   },
   delete: async (id: string): Promise<void> => {
-    await fetch(`${SUPABASE_URL}/rest/v1/recipes?id=eq.${id}`, { method: 'DELETE', headers: dbHeaders });
+    await fetch(`${SUPABASE_URL}/rest/v1/recipes?id=eq.${id}`, { method: 'DELETE', headers: makeHeaders(token) });
   }
-};
+});
 
 const emptyForm = (author: string): FormState => ({
   id: null, title: '', creation_time: '', date: '', type: '',
@@ -199,9 +228,7 @@ interface ProcedureEditorProps {
 function ProcedureEditor({ steps, onChange, inputStyle, c }: ProcedureEditorProps) {
   const refs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
-  const update = (i: number, val: string) => {
-    const s = [...steps]; s[i] = val; onChange(s);
-  };
+  const update = (i: number, val: string) => { const s = [...steps]; s[i] = val; onChange(s); };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>, i: number) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -231,13 +258,7 @@ function ProcedureEditor({ steps, onChange, inputStyle, c }: ProcedureEditorProp
     <div>
       {steps.map((step, i) => (
         <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'flex-start' }}>
-          <div style={{
-            minWidth: 26, height: 26, borderRadius: '50%',
-            background: c.accentLight, color: c.accent,
-            fontWeight: 700, fontSize: 12, display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            marginTop: 9, flexShrink: 0, fontFamily: "'Cormorant Garamond',serif"
-          }}>{i + 1}</div>
+          <div style={{ minWidth: 26, height: 26, borderRadius: '50%', background: c.accentLight, color: c.accent, fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 9, flexShrink: 0, fontFamily: "'Cormorant Garamond',serif" }}>{i + 1}</div>
           <textarea
             ref={el => { refs.current[i] = el; if (el) autoResize(el); }}
             value={step}
@@ -277,7 +298,6 @@ function AutocompleteInput({ value, onChange, suggestions, placeholder, style, f
   const filtered = suggestions.filter(s =>
     s.toLowerCase().includes(value.toLowerCase()) && s.toLowerCase() !== value.toLowerCase()
   );
-
   return (
     <div style={{ position: 'relative' }}>
       <input style={style} placeholder={placeholder} value={value}
@@ -304,9 +324,8 @@ function AutocompleteInput({ value, onChange, suggestions, placeholder, style, f
 
 export default function ChefBook() {
   const [view, setView] = useState<string>('loading');
+  const [session, setSession] = useState<Session | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [username, setUsername] = useState('');
-  const [nameInput, setNameInput] = useState('');
   const [filter, setFilter] = useState('tutti');
   const [current, setCurrent] = useState<Recipe | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm(''));
@@ -319,41 +338,84 @@ export default function ChefBook() {
   const [syncing, setSyncing] = useState(false);
   const [currentServings, setCurrentServings] = useState(1);
   const [currentWeightInput, setCurrentWeightInput] = useState('');
+
+  // Login form
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
 
   const types = Array.from(new Set(recipes.map(r => r.type).filter(Boolean)));
   const authors = Array.from(new Set(recipes.map(r => r.author).filter(Boolean)));
 
-  const load = async (quiet = false) => {
+  // Nome visualizzato: display_name dai metadati oppure parte prima della @
+  const displayName = (sess: Session) =>
+    sess.user.user_metadata?.display_name || sess.user.email.split('@')[0];
+
+  const load = async (token: string, quiet = false) => {
     if (!quiet) setSyncing(true);
     try {
+      const api = makeApi(token);
       const recs = await api.list();
       if (Array.isArray(recs)) setRecipes(recs);
-      else setError('Errore connessione. Controlla URL e chiave Supabase.');
+      else setError('Errore connessione. Controlla le credenziali Supabase.');
     } catch { setError('Errore connessione Supabase.'); }
     setSyncing(false);
   };
 
+  // Al mount: controlla se c'è una sessione salvata
   useEffect(() => {
     (async () => {
-      const u = localStorage.getItem('cb-user');
-      if (u) { setUsername(u); await load(); setView('home'); }
-      else setView('login');
+      const stored = localStorage.getItem('cb-session');
+      if (stored) {
+        try {
+          const sess = JSON.parse(stored) as Session;
+          // Verifica che il token sia ancora valido
+          const user = await authApi.getUser(sess.access_token);
+          if (user) {
+            setSession(sess);
+            await load(sess.access_token);
+            setView('home');
+            return;
+          }
+        } catch {}
+        localStorage.removeItem('cb-session');
+      }
+      setView('login');
     })();
   }, []);
 
   const handleLogin = async () => {
-    if (!nameInput.trim()) return;
-    setView('loading');
-    localStorage.setItem('cb-user', nameInput.trim());
-    setUsername(nameInput.trim());
-    await load();
+    if (!loginEmail.trim() || !loginPassword.trim()) return;
+    setLoginLoading(true); setError('');
+    const { session: sess, error: err } = await authApi.signIn(loginEmail.trim(), loginPassword);
+    if (err || !sess) {
+      setError(err || 'Errore di accesso');
+      setLoginLoading(false);
+      return;
+    }
+    localStorage.setItem('cb-session', JSON.stringify(sess));
+    setSession(sess);
+    await load(sess.access_token);
+    setLoginLoading(false);
     setView('home');
   };
 
+  const handleLogout = async () => {
+    if (session) await authApi.signOut(session.access_token);
+    localStorage.removeItem('cb-session');
+    setSession(null);
+    setRecipes([]);
+    setView('login');
+  };
+
+  const getToken = () => session?.access_token || '';
+
   const newRecipe = () => {
-    setForm(emptyForm(username)); setSteps(['']);
-    setPhotoPreview(null); setCurrent(null); setView('form');
+    setForm(emptyForm(session ? displayName(session) : ''));
+    setSteps(['']); setPhotoPreview(null); setCurrent(null); setView('form');
   };
 
   const editRecipe = (r: Recipe) => {
@@ -364,24 +426,21 @@ export default function ChefBook() {
   };
 
   const duplicateRecipe = (r: Recipe) => {
-    setForm({ ...r, id: null, date: r.date || '', title: `${r.title} (copia)`, author: username });
+    setForm({ ...r, id: null, date: r.date || '', title: `${r.title} (copia)`, author: session ? displayName(session) : '' });
     setSteps(dbToSteps(r.procedure));
     setPhotoPreview(r.photo_url || null);
-    setCurrent(null);
-    setView('form');
+    setCurrent(null); setView('form');
   };
 
   const openDetail = (r: Recipe) => {
-    setCurrent(r);
-    setCurrentServings(r.servings || 1);
-    setCurrentWeightInput(r.weight || '');
-    setView('detail');
+    setCurrent(r); setCurrentServings(r.servings || 1);
+    setCurrentWeightInput(r.weight || ''); setView('detail');
   };
 
   const handlePhotoSelect = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true); setError('');
-    try { const url = await uploadPhoto(file); sf('photo_url', url); setPhotoPreview(url); }
+    try { const url = await uploadPhoto(file, getToken()); sf('photo_url', url); setPhotoPreview(url); }
     catch { setError('Errore caricamento foto. Riprova.'); }
     setUploading(false);
   };
@@ -390,12 +449,14 @@ export default function ChefBook() {
     if (!form.title.trim()) return;
     setSaving(true); setError('');
     try {
+      const api = makeApi(getToken());
       const data: Partial<Recipe> = {
         title: form.title, creation_time: form.creation_time,
         date: form.date || null, type: form.type, weight: form.weight,
         servings: form.servings || 1, ingredients: form.ingredients,
         procedure: stepsToDb(steps), photo_url: form.photo_url,
-        notes: form.notes, cost: form.cost, author: form.author || username
+        notes: form.notes, cost: form.cost,
+        author: form.author || (session ? displayName(session) : '')
       };
       if (form.id) {
         await api.update(form.id, data);
@@ -415,6 +476,7 @@ export default function ChefBook() {
   };
 
   const handleDelete = async (id: string) => {
+    const api = makeApi(getToken());
     await api.delete(id);
     setRecipes(prev => prev.filter(r => r.id !== id));
     setView('home');
@@ -430,6 +492,7 @@ export default function ChefBook() {
       (r.author || '').toLowerCase().includes(search.toLowerCase())
     );
 
+  // ─── PALETTE ──────────────────────────────────────────────────────
   const c: Record<string, string> = {
     bg: '#F7F3EE', card: '#FFFFFF', card2: '#FDF9F4',
     accent: '#A8621A', accentLight: '#F2E4D0', accentMid: '#C4862A',
@@ -482,9 +545,7 @@ export default function ChefBook() {
       .meta-strip > div:last-child { border-bottom: none !important; }
       .servings-weight-row { flex-wrap: wrap; gap: 10px !important; }
     }
-    @media (max-width: 400px) {
-      .rgrid { grid-template-columns: 1fr !important; }
-    }
+    @media (max-width: 400px) { .rgrid { grid-template-columns: 1fr !important; } }
   `;
 
   // ─── LOADING ───────────────────────────────────────────────────────
@@ -498,21 +559,55 @@ export default function ChefBook() {
 
   // ─── LOGIN ─────────────────────────────────────────────────────────
   if (view === 'login') return (
-    <div style={{ ...A.wrap, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'linear-gradient(135deg,#F7F3EE,#EDE3D6)' }}>
+    <div style={{ ...A.wrap, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'linear-gradient(135deg,#F7F3EE,#EDE3D6)', minHeight: '100vh' }}>
       <style>{css}</style>
       <div style={{ ...A.cardBox, padding: '48px 36px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
         <div style={{ fontSize: 52, marginBottom: 14 }}>👨‍🍳</div>
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 42, fontWeight: 700, color: c.accent, marginBottom: 6 }}>Chef's Book</div>
         <div style={{ color: c.muted, marginBottom: 32, fontSize: 14, lineHeight: 1.7 }}>Il ricettario collaborativo<br />della tua cucina</div>
+
         {error && <div style={A.err}>{error}</div>}
+
         <div style={{ ...A.field, textAlign: 'left' }}>
-          <label style={A.label}>Come ti chiami?</label>
-          <AutocompleteInput value={nameInput} onChange={setNameInput} suggestions={authors} placeholder="Es. Marco Rossi" style={{ ...A.input, fontSize: 15 }} field="author" />
+          <label style={A.label}>Email</label>
+          <input
+            style={A.input}
+            type="email"
+            placeholder="Es. marco@cucina.it"
+            value={loginEmail}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setLoginEmail(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            autoFocus
+          />
         </div>
-        <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '14px', fontSize: 15 }} onClick={handleLogin}>
-          Entra nel ricettario →
+
+        <div style={{ ...A.field, textAlign: 'left' }}>
+          <label style={A.label}>Password</label>
+          <div style={{ position: 'relative' }}>
+            <input
+              style={{ ...A.input, paddingRight: 44 }}
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              value={loginPassword}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setLoginPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            />
+            <button
+              onClick={() => setShowPassword(v => !v)}
+              style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: c.muted, padding: 0 }}
+              tabIndex={-1}
+            >{showPassword ? '🙈' : '👁️'}</button>
+          </div>
+        </div>
+
+        <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '14px', fontSize: 15, opacity: loginLoading ? 0.6 : 1 }}
+          onClick={handleLogin} disabled={loginLoading}>
+          {loginLoading ? <span><span className="spin">⟳</span> Accesso...</span> : 'Accedi →'}
         </button>
-        <div style={{ color: c.muted, fontSize: 11, marginTop: 18 }}>Ricette condivise con tutti i colleghi · Dati su Supabase</div>
+
+        <div style={{ color: c.muted, fontSize: 11, marginTop: 20, lineHeight: 1.6 }}>
+          Accesso riservato al personale autorizzato<br />Per ricevere le credenziali contatta l'amministratore
+        </div>
       </div>
     </div>
   );
@@ -525,20 +620,23 @@ export default function ChefBook() {
         <div style={A.logo}>👨‍🍳 Chef's Book</div>
         <div className="desktop-search" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
           <input style={{ ...A.input, maxWidth: 200, padding: '7px 12px', fontSize: 13 }} placeholder="🔍 Cerca ricetta..." value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
-          <button className="hbtn" style={{ ...A.btnO, padding: '7px 11px', fontSize: 16 }} onClick={() => load()}>
+          <button className="hbtn" style={{ ...A.btnO, padding: '7px 11px', fontSize: 16 }} onClick={() => session && load(session.access_token)}>
             {syncing ? <span className="spin">⟳</span> : '⟳'}
           </button>
-          <span style={{ color: c.muted, fontSize: 12, whiteSpace: 'nowrap' }}>👤 <strong style={{ color: c.text }}>{username}</strong></span>
+          <span style={{ color: c.muted, fontSize: 12, whiteSpace: 'nowrap' }}>
+            👤 <strong style={{ color: c.text }}>{session ? displayName(session) : ''}</strong>
+          </span>
           <button className="hbtn" style={A.btn} onClick={newRecipe}>+ Nuova ricetta</button>
+          <button className="hbtn" style={{ ...A.btnO, fontSize: 12, padding: '7px 12px' }} onClick={handleLogout} title="Esci">Esci</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="hbtn mobile-search" style={{ ...A.btn }}>+ Nuova</button>
+          <button className="hbtn mobile-search" style={{ ...A.btn }} onClick={newRecipe}>+ Nuova</button>
         </div>
       </div>
 
       <div className="mobile-search" style={{ display: 'none' }}>
         <input style={{ ...A.input, fontSize: 14 }} placeholder="🔍 Cerca ricetta o autore..." value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
-        <button className="hbtn" style={{ ...A.btnO, padding: '9px 11px', fontSize: 16, flexShrink: 0 }} onClick={() => load()}>
+        <button className="hbtn" style={{ ...A.btnO, padding: '9px 11px', fontSize: 16, flexShrink: 0 }} onClick={() => session && load(session.access_token)}>
           {syncing ? <span className="spin">⟳</span> : '⟳'}
         </button>
         <button className="hbtn" style={{ ...A.btn, flexShrink: 0 }} onClick={newRecipe}>+ Nuova</button>
@@ -603,7 +701,6 @@ export default function ChefBook() {
     const r = current;
     const baseServings = r.servings || 1;
     const baseWeight = parseWeightValue(r.weight);
-
     let multiplier = currentServings / baseServings;
     if (baseWeight !== null) {
       const currentWeightVal = parseWeightValue(currentWeightInput);
@@ -611,7 +708,6 @@ export default function ChefBook() {
         multiplier = (currentWeightVal / baseWeight) * (currentServings / baseServings);
       }
     }
-
     const multipliedIngredients = multiplyIngredients(r.ingredients, multiplier);
     const parsedSteps = dbToSteps(r.procedure);
     const weightUnit = r.weight ? r.weight.replace(/[\d.,\s]/g, '').trim() : '';
@@ -630,9 +726,7 @@ export default function ChefBook() {
         </div>
 
         <div style={{ maxWidth: 780, margin: '0 auto', padding: '26px 16px 70px' }}>
-          {r.photo_url && (
-            <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 270, objectFit: 'cover', borderRadius: 14, marginBottom: 22, display: 'block', boxShadow: `0 8px 32px ${c.shadow}` }} />
-          )}
+          {r.photo_url && <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 270, objectFit: 'cover', borderRadius: 14, marginBottom: 22, display: 'block', boxShadow: `0 8px 32px ${c.shadow}` }} />}
           {r.type && <div style={{ ...A.tag, display: 'inline-block', marginBottom: 10 }}>{r.type}</div>}
           <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 34, fontWeight: 700, lineHeight: 1.15, marginBottom: 18, color: c.text }}>{r.title}</h1>
 
@@ -661,55 +755,32 @@ export default function ChefBook() {
                       style={{ background: 'none', border: 'none', color: c.muted, fontSize: 11, cursor: 'pointer', textDecoration: 'underline', paddingTop: 4 }}>↩ reset</button>
                   )}
                 </div>
-
                 <div className="servings-weight-row" style={{ display: 'flex', gap: 20, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-
-                  {/* ── PORZIONI con input decimale ── */}
+                  {/* Porzioni */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const }}>Porzioni</span>
                     <div style={{ display: 'flex', alignItems: 'center', border: `1.5px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                      <button
-                        onClick={() => setCurrentServings(s => Math.max(0.1, Math.round((s - 0.1) * 10) / 10))}
+                      <button onClick={() => setCurrentServings(s => Math.max(0.1, Math.round((s - 0.1) * 10) / 10))}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.muted, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                      <input
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={currentServings}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                          const v = parseFloat(e.target.value);
-                          if (!isNaN(v) && v > 0) setCurrentServings(Math.round(v * 10) / 10);
-                        }}
-                        style={{ width: 46, height: 30, border: 'none', borderLeft: `1px solid ${c.border}`, borderRight: `1px solid ${c.border}`, background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: 0 }}
-                      />
-                      <button
-                        onClick={() => setCurrentServings(s => Math.round((s + 0.1) * 10) / 10)}
+                      <input type="number" min="0.1" step="0.1" value={currentServings}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setCurrentServings(Math.round(v * 10) / 10); }}
+                        style={{ width: 46, height: 30, border: 'none', borderLeft: `1px solid ${c.border}`, borderRight: `1px solid ${c.border}`, background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: 0 }} />
+                      <button onClick={() => setCurrentServings(s => Math.round((s + 0.1) * 10) / 10)}
                         style={{ background: c.bg, border: 'none', width: 30, height: 30, cursor: 'pointer', fontSize: 17, color: c.accent, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                     </div>
                   </div>
-
-                  {/* ── PESO modificabile ── */}
+                  {/* Peso */}
                   {baseWeight !== null && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const }}>Peso</span>
                       <div style={{ display: 'flex', alignItems: 'center', border: `1.5px solid ${c.border}`, borderRadius: 8, overflow: 'hidden', background: c.input }}>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={parseWeightValue(currentWeightInput) ?? ''}
-                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                            const num = e.target.value;
-                            setCurrentWeightInput(num ? `${num}${weightUnit}` : '');
-                          }}
-                          style={{ width: 70, height: 30, border: 'none', background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: '0 8px' }}
-                        />
+                        <input type="number" min="1" step="1" value={parseWeightValue(currentWeightInput) ?? ''}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => { const num = e.target.value; setCurrentWeightInput(num ? `${num}${weightUnit}` : ''); }}
+                          style={{ width: 70, height: 30, border: 'none', background: 'transparent', fontFamily: "'Nunito',sans-serif", fontWeight: 700, fontSize: 14, color: c.text, textAlign: 'center', padding: '0 8px' }} />
                         {weightUnit && <span style={{ paddingRight: 8, color: c.muted, fontSize: 13, fontWeight: 600 }}>{weightUnit}</span>}
                       </div>
                     </div>
                   )}
-
-                  {/* ── Badge moltiplicatore ── */}
                   {isModified && (
                     <div style={{ background: c.accentLight, borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: c.accent }}>
                       ×{Math.round(multiplier * 100) / 100}
@@ -717,11 +788,8 @@ export default function ChefBook() {
                   )}
                 </div>
               </div>
-
               <div style={{ textAlign: 'left' }}>
-                {multipliedIngredients.split('\n').map((line, i) => (
-                  <IngredientLine key={i} raw={line} c={c} />
-                ))}
+                {multipliedIngredients.split('\n').map((line, i) => <IngredientLine key={i} raw={line} c={c} />)}
               </div>
             </div>
           )}
@@ -816,7 +884,7 @@ export default function ChefBook() {
             </div>
             <div style={A.field}>
               <label style={A.label}>Autore</label>
-              <AutocompleteInput value={form.author || username} onChange={v => sf('author', v)} suggestions={authors} placeholder="Es. Marco Rossi" style={A.input} field="author" />
+              <AutocompleteInput value={form.author || (session ? displayName(session) : '')} onChange={v => sf('author', v)} suggestions={authors} placeholder="Es. Marco Rossi" style={A.input} field="author" />
             </div>
           </div>
 
