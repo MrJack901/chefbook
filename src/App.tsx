@@ -121,12 +121,25 @@ const db = {
       email: string;
       display_name: string;
       message?: string | null;
-    }) =>
-      fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
+    }) => {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
         method: 'POST',
-        headers: makeHdr(), // senza Authorization
+        headers: {
+          ...makeHdr(),                 // deve includere apikey + content-type JSON
+          Prefer: 'return=representation',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(data),
-      }),
+      });
+    
+      const text = await res.text();
+      console.log('POST status:', res.status);
+      console.log('POST body:', text);
+    
+      if (!res.ok) throw new Error(`Insert failed: ${res.status} ${text}`);
+    
+      return text ? JSON.parse(text) : null;
+    },
     // insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
     setStatus: async (id: string, status: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
@@ -965,12 +978,39 @@ export default function ChefBook() {
             <div style={A.fld}><label style={A.lbl}>Messaggio (facoltativo)</label>
               <textarea style={{ ...A.inp, minHeight: 90, lineHeight: 1.7 }} placeholder="Presentati brevemente, perché vorresti contribuire..." value={reqMsg} onChange={e => setReqMsg(e.target.value)} />
             </div>
-            <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} onClick={async () => {
-              if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
-              setError('');
-              await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
-              setReqSent(true);
-            }}>Invia richiesta →</button>
+            //<button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} 
+            //onClick={async () => {
+             // if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
+              //setError('');
+              //await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
+              //setReqSent(true);
+            //}}>Invia richiesta →</button>
+            //<button
+  className="hbtn"
+  style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }}
+  onClick={async () => {
+    if (!reqEmail.trim() || !reqName.trim()) {
+      setError('Email e nome sono obbligatori');
+      return;
+    }
+    setError('');
+
+    try {
+      await db.requests.insert({
+        email: reqEmail.trim(),
+        display_name: reqName.trim(),
+        message: reqMsg.trim() ? reqMsg.trim() : null,
+      });
+      setReqSent(true);
+    } catch (e: any) {
+      setReqSent(false);
+      setError(e?.message ?? 'Errore durante l’invio');
+      console.error(e);
+    }
+  }}
+>
+  Invia richiesta →
+</button>
           </div>
         )}
       </div>
