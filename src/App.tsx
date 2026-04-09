@@ -27,19 +27,12 @@ interface MetaItem { icon: string; label: string; value: string; accent?: boolea
 // ─── HELPERS ──────────────────────────────────────────────────────
 const dispName = (sess: Session) => sess.user.user_metadata?.display_name || sess.user.email.split('@')[0];
 
-//const makeHdr = (token?: string): Record<string, string> => ({
-  //'apikey': SUPABASE_ANON_KEY,
-  //'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
-  //'Content-Type': 'application/json',
-  //'Prefer': 'return=representation'
-//});
-
-const makeHdr = (accessToken?: string): Record<string, string> => ({
-  apikey: SUPABASE_ANON_KEY,
+const makeHdr = (token?: string): Record<string, string> => ({
+  'apikey': SUPABASE_ANON_KEY,
+  'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
   'Content-Type': 'application/json',
-  Prefer: 'return=representation',
-  ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-})
+  'Prefer': 'return=representation'
+});
 
 const compressImage = (file: File): Promise<Blob> => new Promise(resolve => {
   const img = new Image(); const url = URL.createObjectURL(file);
@@ -117,34 +110,9 @@ const db = {
   },
   requests: {
     list: async (token: string): Promise<AccountRequest[]> => (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
-    insert: async (data: {
-      email: string;
-      display_name: string;
-      message?: string | null;
-    }) => {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
-        method: 'POST',
-        headers: {
-          ...makeHdr(),                 // deve includere apikey + content-type JSON
-          Prefer: 'return=representation',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
-    
-      const text = await res.text();
-      console.log('POST status:', res.status);
-      console.log('POST body:', text);
-    
-      if (!res.ok) throw new Error(`Insert failed: ${res.status} ${text}`);
-    
-      return text ? JSON.parse(text) : null;
-    },
-    // insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
+    insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
     setStatus: async (id: string, status: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
-
-
 };
 
 const uploadPhoto = async (file: File, token: string): Promise<string> => {
@@ -436,7 +404,7 @@ export default function ChefBook() {
     if (!isAdminUser && form.type && !types.includes(form.type)) return 'Seleziona una tipologia esistente';
     if (!form.weight) return 'Il peso è obbligatorio';
     const wNum = parseFloat(form.weight.replace(',', '.'));
-    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 750)';
+    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 0.750)';
     if (form.ingredients.split('\n').filter(l => l.trim()).length < 3) return 'Inserisci almeno 3 righe di ingredienti';
     if (!steps.some(s => s.trim())) return 'Inserisci almeno un passo nel procedimento';
     return null;
@@ -447,7 +415,7 @@ export default function ChefBook() {
     setSaving(true); setError('');
     try {
       const weightVal = parseFloat(form.weight.replace(',', '.'));
-      const weightStr = `${weightVal} gr`;
+      const weightStr = `${weightVal} kg`;
       const data: Partial<Recipe> = {
         title: form.title, creation_time: form.creation_time, date: form.date || null,
         type: form.type, weight: weightStr, servings: form.servings || 1,
@@ -732,10 +700,10 @@ export default function ChefBook() {
             <div style={A.fld}><label style={A.lbl}>Tipologia *{!isAdminUser && types.length > 0 && <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}> (scegli tra le esistenti)</span>}</label>
               <TypeInput value={form.type} onChange={v => sf('type', v)} types={types} isAdmin={isAdminUser} style={A.inp} />
             </div>
-            <div style={A.fld}><label style={A.lbl}>Peso * <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>(in gr)</span></label>
+            <div style={A.fld}><label style={A.lbl}>Peso * <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>(in kg)</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="number" min="0.001" step="0.001" placeholder="Es. 750" style={{ ...A.inp, flex: 1 }} value={parseW(form.weight) ?? ''} onChange={e => sf('weight', e.target.value)} />
-                <span style={{ fontWeight: 700, color: c.muted, fontSize: 14, whiteSpace: 'nowrap' as const }}>gr</span>
+                <input type="number" min="0.001" step="0.001" placeholder="Es. 0.750" style={{ ...A.inp, flex: 1 }} value={parseW(form.weight) ?? ''} onChange={e => sf('weight', e.target.value)} />
+                <span style={{ fontWeight: 700, color: c.muted, fontSize: 14, whiteSpace: 'nowrap' as const }}>kg</span>
               </div>
             </div>
           </div>
@@ -978,39 +946,12 @@ export default function ChefBook() {
             <div style={A.fld}><label style={A.lbl}>Messaggio (facoltativo)</label>
               <textarea style={{ ...A.inp, minHeight: 90, lineHeight: 1.7 }} placeholder="Presentati brevemente, perché vorresti contribuire..." value={reqMsg} onChange={e => setReqMsg(e.target.value)} />
             </div>
-            //<button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} 
-            //onClick={async () => {
-             // if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
-              //setError('');
-              //await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
-              //setReqSent(true);
-            //}}>Invia richiesta →</button>
-            //<button
-  className="hbtn"
-  style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }}
-  onClick={async () => {
-    if (!reqEmail.trim() || !reqName.trim()) {
-      setError('Email e nome sono obbligatori');
-      return;
-    }
-    setError('');
-
-    try {
-      await db.requests.insert({
-        email: reqEmail.trim(),
-        display_name: reqName.trim(),
-        message: reqMsg.trim() ? reqMsg.trim() : null,
-      });
-      setReqSent(true);
-    } catch (e: any) {
-      setReqSent(false);
-      setError(e?.message ?? 'Errore durante l’invio');
-      console.error(e);
-    }
-  }}
->
-  Invia richiesta →
-</button>
+            <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} onClick={async () => {
+              if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
+              setError('');
+              await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
+              setReqSent(true);
+            }}>Invia richiesta →</button>
           </div>
         )}
       </div>
