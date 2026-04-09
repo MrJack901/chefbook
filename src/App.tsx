@@ -27,12 +27,19 @@ interface MetaItem { icon: string; label: string; value: string; accent?: boolea
 // ─── HELPERS ──────────────────────────────────────────────────────
 const dispName = (sess: Session) => sess.user.user_metadata?.display_name || sess.user.email.split('@')[0];
 
-const makeHdr = (token?: string): Record<string, string> => ({
-  'apikey': SUPABASE_ANON_KEY,
-  'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+//const makeHdr = (token?: string): Record<string, string> => ({
+  //'apikey': SUPABASE_ANON_KEY,
+  //'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+  //'Content-Type': 'application/json',
+  //'Prefer': 'return=representation'
+//});
+
+const makeHdr = (accessToken?: string): Record<string, string> => ({
+  apikey: SUPABASE_ANON_KEY,
   'Content-Type': 'application/json',
-  'Prefer': 'return=representation'
-});
+  Prefer: 'return=representation',
+  ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+})
 
 const compressImage = (file: File): Promise<Blob> => new Promise(resolve => {
   const img = new Image(); const url = URL.createObjectURL(file);
@@ -110,9 +117,17 @@ const db = {
   },
   requests: {
     list: async (token: string): Promise<AccountRequest[]> => (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
-    insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
+    insert: async (data) =>
+    fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
+      method: 'POST',
+      headers: makeHdr(), // senza Authorization
+      body: JSON.stringify(data),
+    });
+    // insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
     setStatus: async (id: string, status: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
+
+
 };
 
 const uploadPhoto = async (file: File, token: string): Promise<string> => {
