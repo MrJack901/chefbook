@@ -902,11 +902,30 @@ export default function ChefBook() {
                     <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, alignItems: 'flex-end' }}>
                       {req.status === 'pending' ? (
                         <>
-                          <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }} onClick={async () => {
-                            await db.requests.setStatus(req.id, 'approved', tok()!);
-                            setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
-                            window.open(`mailto:${req.email}?subject=Account%20Chef%27s%20Book%20approvato&body=Ciao%20${req.display_name}%2C%0A%0Ala%20tua%20richiesta%20di%20accesso%20a%20Chef%27s%20Book%20%C3%A8%20stata%20approvata!%0A%0AEmail%3A%20${req.email}%0APassword%3A%20(inserisci%20qui%20la%20password%20che%20hai%20impostato)%0A%0ALink%3A%20${window.location.origin}%0A%0ABuona%20cucina!`);
-                          }}>✓ Approva</button>
+                          <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }} 
+                              onClick={async () => {
+                                if (!window.confirm(`Creare account per ${req.display_name} (${req.email})?`)) return;
+                                try {
+                                  const res = await fetch(`${SUPABASE_URL}/functions/v1/approve-request`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${tok()}`,
+                                    },
+                                    body: JSON.stringify({
+                                      request_id: req.id,
+                                      email: req.email,
+                                      display_name: req.display_name,
+                                    }),
+                                  });
+                                  const j = await res.json();
+                                  if (!res.ok) { alert(`Errore: ${j.error}`); return; }
+                                  setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
+                                  alert(`✅ Account creato per ${req.display_name}! Email di benvenuto inviata a ${req.email}.`);
+                                } catch {
+                                  alert('Errore di connessione. Riprova.');
+                                }
+                              }}>✓ Approva</button>
                           <button className="hbtn" style={{ ...A.btnR, fontSize: 12, padding: '6px 12px' }} onClick={async () => {
                             await db.requests.setStatus(req.id, 'rejected', tok()!);
                             setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' } : r));
