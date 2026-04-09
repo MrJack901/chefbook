@@ -109,9 +109,23 @@ const db = {
     delete: async (userId: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/rpc/delete_auth_user`, { method: 'POST', headers: makeHdr(token), body: JSON.stringify({ target_user_id: userId }) }),
   },
   requests: {
-    list: async (token: string): Promise<AccountRequest[]> => (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
-    insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
-    setStatus: async (id: string, status: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
+    list: async (token: string): Promise<AccountRequest[]> => 
+      (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
+    
+    insert: async (data: { email: string; display_name: string; message: string }) => 
+      fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { 
+        method: 'POST', 
+        headers: { 
+          'apikey': SUPABASE_ANON_KEY, 
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'   // ← cambiato da return=representation
+        }, 
+        body: JSON.stringify(data) 
+      }),
+    
+    setStatus: async (id: string, status: string, token: string) => 
+      fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
 };
 
@@ -947,11 +961,25 @@ export default function ChefBook() {
               <textarea style={{ ...A.inp, minHeight: 90, lineHeight: 1.7 }} placeholder="Presentati brevemente, perché vorresti contribuire..." value={reqMsg} onChange={e => setReqMsg(e.target.value)} />
             </div>
             <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} onClick={async () => {
-              if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
-              setError('');
-              await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
-              setReqSent(true);
-            }}>Invia richiesta →</button>
+  if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
+  setError('');
+  try {
+    const res = await db.requests.insert({ 
+      email: reqEmail.trim(), 
+      display_name: reqName.trim(), 
+      message: reqMsg.trim() 
+    });
+    if (!res.ok) {
+      const j = await res.json();
+      setError(`Errore: ${j.message || j.msg || res.status}`);
+      return;
+    }
+    setReqSent(true);
+  } catch (e) {
+    setError('Errore di connessione. Riprova.');
+  }
+}}
+>Invia richiesta →</button>
           </div>
         )}
       </div>
