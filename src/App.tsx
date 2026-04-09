@@ -902,15 +902,18 @@ export default function ChefBook() {
                     <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, alignItems: 'flex-end' }}>
                       {req.status === 'pending' ? (
                         <>
-                          <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }} 
+                            <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }}
                               onClick={async () => {
+                                const token = session?.access_token;  // ← leggi direttamente da session, non da tok()
+                                if (!token) { alert('Sessione scaduta, rieffettua il login'); return; }
                                 if (!window.confirm(`Creare account per ${req.display_name} (${req.email})?`)) return;
                                 try {
                                   const res = await fetch(`${SUPABASE_URL}/functions/v1/approve-request`, {
                                     method: 'POST',
                                     headers: {
                                       'Content-Type': 'application/json',
-                                      'Authorization': `Bearer ${tok()}`,
+                                      'Authorization': `Bearer ${token}`,
+                                      'apikey': SUPABASE_ANON_KEY,
                                     },
                                     body: JSON.stringify({
                                       request_id: req.id,
@@ -921,7 +924,7 @@ export default function ChefBook() {
                                   const j = await res.json();
                                   if (!res.ok) { alert(`Errore: ${j.error}`); return; }
                                   setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
-                                  alert(`✅ Account creato per ${req.display_name}! Email di benvenuto inviata a ${req.email}.`);
+                                  alert(`✅ Account creato per ${req.display_name}!`);
                                 } catch {
                                   alert('Errore di connessione. Riprova.');
                                 }
