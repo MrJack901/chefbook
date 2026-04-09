@@ -122,7 +122,7 @@ const db = {
       method: 'POST',
       headers: makeHdr(), // senza Authorization
       body: JSON.stringify(data),
-    });
+    }),
     // insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
     setStatus: async (id: string, status: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
