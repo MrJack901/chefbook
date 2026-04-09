@@ -117,10 +117,10 @@ const db = {
   },
   requests: {
     list: async (token: string): Promise<AccountRequest[]> => (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
-    insert: async (data) =>
+    insert: async (data: any) =>
     fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
       method: 'POST',
-      headers: makeHdr(), // senza Authorization
+      headers: makeHdr(),
       body: JSON.stringify(data),
     }),
     // insert: async (data: { email: string; display_name: string; message: string }) => fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { method: 'POST', headers: makeHdr(), body: JSON.stringify(data) }),
