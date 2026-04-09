@@ -404,7 +404,7 @@ export default function ChefBook() {
     if (!isAdminUser && form.type && !types.includes(form.type)) return 'Seleziona una tipologia esistente';
     if (!form.weight) return 'Il peso è obbligatorio';
     const wNum = parseFloat(form.weight.replace(',', '.'));
-    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 0.750)';
+    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 750)';
     if (form.ingredients.split('\n').filter(l => l.trim()).length < 3) return 'Inserisci almeno 3 righe di ingredienti';
     if (!steps.some(s => s.trim())) return 'Inserisci almeno un passo nel procedimento';
     return null;
@@ -415,7 +415,7 @@ export default function ChefBook() {
     setSaving(true); setError('');
     try {
       const weightVal = parseFloat(form.weight.replace(',', '.'));
-      const weightStr = `${weightVal} kg`;
+      const weightStr = `${weightVal} gr`;
       const data: Partial<Recipe> = {
         title: form.title, creation_time: form.creation_time, date: form.date || null,
         type: form.type, weight: weightStr, servings: form.servings || 1,
@@ -700,10 +700,10 @@ export default function ChefBook() {
             <div style={A.fld}><label style={A.lbl}>Tipologia *{!isAdminUser && types.length > 0 && <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}> (scegli tra le esistenti)</span>}</label>
               <TypeInput value={form.type} onChange={v => sf('type', v)} types={types} isAdmin={isAdminUser} style={A.inp} />
             </div>
-            <div style={A.fld}><label style={A.lbl}>Peso * <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>(in kg)</span></label>
+            <div style={A.fld}><label style={A.lbl}>Peso * <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>(in gr)</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="number" min="0.001" step="0.001" placeholder="Es. 0.750" style={{ ...A.inp, flex: 1 }} value={parseW(form.weight) ?? ''} onChange={e => sf('weight', e.target.value)} />
-                <span style={{ fontWeight: 700, color: c.muted, fontSize: 14, whiteSpace: 'nowrap' as const }}>kg</span>
+                <input type="number" min="0.001" step="0.001" placeholder="Es. 750" style={{ ...A.inp, flex: 1 }} value={parseW(form.weight) ?? ''} onChange={e => sf('weight', e.target.value)} />
+                <span style={{ fontWeight: 700, color: c.muted, fontSize: 14, whiteSpace: 'nowrap' as const }}>gr</span>
               </div>
             </div>
           </div>
