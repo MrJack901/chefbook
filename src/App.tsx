@@ -647,14 +647,16 @@ export default function ChefBook() {
                   {modified && <div style={{ background: c.accentLight, borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: c.accent }}>×{Math.round(mul * 100) / 100}</div>}
                 </div>
               </div>
-              <div>{mulIng.split('\n').map((line, i) => <IngLine key={i} raw={line} c={c} />)}</div>
+
+              <div style={{ textAlign: 'left' }}>{mulIng.split('\n').map((line, i) => <IngLine key={i} raw={line} c={c} />)}
+              </div>
             </div>
           )}
           {pSteps.some(s => s.trim()) && (
             <div style={{ ...A.box, padding: '20px 22px', marginBottom: 16 }}>
               <div style={A.sec}>Procedimento</div>
               {pSteps.map((step, i) => step.trim() && (
-                <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 16, textAlign: 'left' }}>
                   <div style={{ minWidth: 26, height: 26, borderRadius: '50%', background: c.accentLight, color: c.accent, fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 3, fontFamily: "'Cormorant Garamond',serif" }}>{i + 1}</div>
                   <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.85, fontSize: 15, paddingTop: 2, flex: 1 }}>{step}</div>
                 </div>
@@ -663,7 +665,7 @@ export default function ChefBook() {
           )}
           {r.notes && <div style={{ background: '#FFFBF0', border: `1px solid #EDD080`, borderLeft: `4px solid ${c.accentMid}`, borderRadius: '0 12px 12px 0', padding: '16px 20px' }}>
             <div style={{ ...A.lbl, color: c.accentMid, marginBottom: 8 }}>📝 Note</div>
-            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, fontSize: 14, fontStyle: 'italic' }}>{r.notes}</div>
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, fontSize: 14, fontStyle: 'italic', textAlign: 'left' }}>{r.notes}</div>
           </div>}
         </div>
       </div>
