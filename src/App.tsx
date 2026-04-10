@@ -982,26 +982,60 @@ export default function ChefBook() {
             <div style={A.fld}><label style={A.lbl}>Messaggio (facoltativo)</label>
               <textarea style={{ ...A.inp, minHeight: 90, lineHeight: 1.7 }} placeholder="Presentati brevemente, perché vorresti contribuire..." value={reqMsg} onChange={e => setReqMsg(e.target.value)} />
             </div>
-            <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }} onClick={async () => {
-  if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
-  setError('');
-  try {
-    const res = await db.requests.insert({ 
-      email: reqEmail.trim(), 
-      display_name: reqName.trim(), 
-      message: reqMsg.trim() 
-    });
-    if (!res.ok) {
-      const j = await res.json();
-      setError(`Errore: ${j.message || j.msg || res.status}`);
+            <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }}
+  onClick={async () => {
+    if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
+    setError('');
+
+    // Controlla se email già registrata in app_users
+    const emailCheck = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_users?email=eq.${encodeURIComponent(reqEmail.trim())}&select=id`,
+      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    const emailRows = await emailCheck.json();
+    if (Array.isArray(emailRows) && emailRows.length > 0) {
+      setError('Questa email è già registrata.');
       return;
     }
-    setReqSent(true);
-  } catch (e) {
-    setError('Errore di connessione. Riprova.');
-  }
-}}
->Invia richiesta →</button>
+
+    // Controlla se display_name già in uso in app_users
+    const nameCheck = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_users?display_name=eq.${encodeURIComponent(reqName.trim())}&select=id`,
+      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    const nameRows = await nameCheck.json();
+    if (Array.isArray(nameRows) && nameRows.length > 0) {
+      setError('Questo nome è già in uso. Scegline un altro.');
+      return;
+    }
+
+    // Controlla se c'è già una richiesta pending con la stessa email
+    const reqCheck = await fetch(
+      `${SUPABASE_URL}/rest/v1/account_requests?email=eq.${encodeURIComponent(reqEmail.trim())}&status=eq.pending&select=id`,
+      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    const reqRows = await reqCheck.json();
+    if (Array.isArray(reqRows) && reqRows.length > 0) {
+      setError('Hai già una richiesta in attesa con questa email.');
+      return;
+    }
+
+    try {
+      const res = await db.requests.insert({
+        email: reqEmail.trim(),
+        display_name: reqName.trim(),
+        message: reqMsg.trim()
+      });
+      if (!res.ok) {
+        const j = await res.json();
+        setError(`Errore: ${j.message || j.msg || res.status}`);
+        return;
+      }
+      setReqSent(true);
+    } catch {
+      setError('Errore di connessione. Riprova.');
+    }
+  }}>Invia richiesta →</button>
           </div>
         )}
       </div>
