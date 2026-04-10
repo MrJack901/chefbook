@@ -14,15 +14,11 @@ interface Recipe {
   date: string | null; type: string; weight: string; servings: number;
   ingredients: string; procedure: string; photo_url: string;
   notes: string; cost: string; author: string;
-  is_hidden: boolean;
-  is_draft: boolean;
 }
 interface FormState {
   id: string | null; title: string; creation_time: string; date: string;
   type: string; weight: string; servings: number; ingredients: string;
   procedure: string; photo_url: string; notes: string; cost: string; author: string;
-  is_hidden: boolean;
-  is_draft: boolean;
 }
 interface AppUser { id: string; email: string; display_name: string | null; is_admin: boolean; created_at: string }
 interface AccountRequest { id: string; email: string; display_name: string; message: string | null; status: string; created_at: string }
@@ -141,12 +137,7 @@ const uploadPhoto = async (file: File, token: string): Promise<string> => {
   return `${SUPABASE_URL}/storage/v1/object/public/recipe-photos/${name}`;
 };
 
-const emptyForm = (author: string): FormState => ({
-  id: null, title: '', creation_time: '', date: '', type: '',
-  weight: '', servings: 1, ingredients: '', procedure: '',
-  photo_url: '', notes: '', cost: '', author,
-  is_hidden: false, is_draft: false
-});
+const emptyForm = (author: string): FormState => ({ id: null, title: '', creation_time: '', date: '', type: '', weight: '', servings: 1, ingredients: '', procedure: '', photo_url: '', notes: '', cost: '', author });
 
 // ─── COMPONENTI ────────────────────────────────────────────────────
 function IngLine({ raw, c }: { raw: string; c: Record<string, string> }) {
@@ -329,11 +320,6 @@ export default function ChefBook() {
   const [requests, setRequests] = useState<AccountRequest[]>([]); const [adminLoading, setAdminLoading] = useState(false);
   // Request form
   const [reqEmail, setReqEmail] = useState(''); const [reqName, setReqName] = useState(''); const [reqMsg, setReqMsg] = useState(''); const [reqSent, setReqSent] = useState(false);
-  const [draftSaving, setDraftSaving] = useState(false);
-  const [draftSaved, setDraftSaved] = useState(false);
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftIdRef = useRef<string | null>(null); // tiene traccia dell'id della bozza creata
-
 
   const fileRef = useRef<HTMLInputElement>(null);
   const types = Array.from(new Set(recipes.map(r => r.type).filter(Boolean)));
@@ -427,19 +413,8 @@ export default function ChefBook() {
     setProfLoading(false);
   };
 
-  const newRecipe = () => {
-    draftIdRef.current = null; // ← aggiungi
-    setForm(emptyForm(userName)); setSteps(['']);
-    setPhotoPreview(null); setCurrent(null); setView('form');
-  };
-
-  const editRecipe = (r: Recipe) => {
-    draftIdRef.current = null; // ← aggiungi
-    setForm({ ...r, date: r.date || '' });
-    setSteps(dbToSteps(r.procedure));
-    setPhotoPreview(r.photo_url || null);
-    setView('form');
-  };
+  const newRecipe = () => { setForm(emptyForm(userName)); setSteps(['']); setPhotoPreview(null); setCurrent(null); setView('form'); };
+  const editRecipe = (r: Recipe) => { setForm({ ...r, date: r.date || '' }); setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setView('form'); };
   const duplicateRecipe = (r: Recipe) => { setForm({ ...r, id: null, date: r.date || '', title: `${r.title} (copia)`, author: userName }); setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setCurrent(null); setView('form'); };
   const openDetail = (r: Recipe) => { setCurrent(r); setCurServings(r.servings || 1); setCurWeight(r.weight || ''); setView('detail'); };
   const canEdit = (r: Recipe) => !isGuest && session && (isAdminUser || r.author === userName);
@@ -474,13 +449,8 @@ export default function ChefBook() {
         type: form.type, weight: weightStr, servings: form.servings || 1,
         ingredients: form.ingredients, procedure: stepsToDb(steps),
         photo_url: form.photo_url, notes: form.notes, cost: form.cost,
-        author: form.author || userName,
-        is_hidden: isAdminUser ? (form.is_hidden || false) : false,
-        is_draft: false,  // quando salvi esplicitamente, esce dalla bozza
-        
+        author: form.author || userName
       };
-
-
       if (form.id) {
         await db.recipes.update(form.id, data, tok()!);
         const updated = { ...form, ...data, id: form.id } as Recipe;
@@ -495,79 +465,12 @@ export default function ChefBook() {
     } catch { setError('Errore salvataggio.'); } setSaving(false);
   };
 
-  const saveDraft = async (currentForm: FormState, currentSteps: string[]) => {
-  if (!session || !currentForm.title.trim()) return; // non salva bozze senza titolo
-  setDraftSaving(true);
-  try {
-    const data: Partial<Recipe> = {
-      title: currentForm.title || '(bozza)',
-      creation_time: currentForm.creation_time,
-      date: currentForm.date || null,
-      type: currentForm.type,
-      weight: currentForm.weight,
-      servings: currentForm.servings || 1,
-      ingredients: currentForm.ingredients,
-      procedure: stepsToDb(currentSteps),
-      photo_url: currentForm.photo_url,
-      notes: currentForm.notes,
-      cost: currentForm.cost,
-      author: currentForm.author || userName,
-      is_hidden: currentForm.is_hidden || false,
-      is_draft: true,
-    };
-    if (draftIdRef.current) {
-      // aggiorna bozza esistente
-      await db.recipes.update(draftIdRef.current, data, tok()!);
-    } else if (!currentForm.id) {
-      // crea nuova bozza solo se non è una ricetta esistente
-      const saved = await db.recipes.insert(data, tok()!);
-      draftIdRef.current = saved.id;
-      sf('id', saved.id);
-      setRecipes(prev => [saved, ...prev.filter(r => r.id !== saved.id)]);
-    }
-    setDraftSaved(true);
-    setTimeout(() => setDraftSaved(false), 2000);
-  } catch (_e) {}
-  setDraftSaving(false);
-};
-
-useEffect(() => {
-  if (view !== 'form' || !session) return;
-  if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-  draftTimerRef.current = setTimeout(() => {
-    saveDraft(form, steps);
-  }, 3000); // salva 3 secondi dopo l'ultima modifica
-  return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-}, [form, steps, view]);
-
-const handleCancelForm = async () => {
-  if (draftIdRef.current && !form.id) {
-    // era una nuova bozza — chiedi se tenerla
-    const keep = window.confirm('Vuoi mantenere la bozza? Clicca OK per tenerla, Annulla per eliminarla.');
-    if (!keep) {
-      await db.recipes.delete(draftIdRef.current, tok()!);
-      setRecipes(prev => prev.filter(r => r.id !== draftIdRef.current));
-    }
-    draftIdRef.current = null;
-  }
-  setView(current ? 'detail' : 'home');
-};
-
   const handleDelete = async (id: string) => { await db.recipes.delete(id, tok()!); setRecipes(prev => prev.filter(r => r.id !== id)); setView('home'); };
 
-  const sf = function <K extends keyof FormState>(k: K, v: FormState[K]) {
-    return setForm(p => ({ ...p, [k]: v }));
-  };
+  const sf = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
 
-  const filtered = recipes
-    .filter(r => {
-      if (filter === '__bozze__') return r.is_draft && (isAdminUser || r.author === userName);
-      if (filter === '__nascoste__') return r.is_hidden && !r.is_draft && isAdminUser;
-      if (filter === 'tutti') return !r.is_draft && (!r.is_hidden || isAdminUser);
-      return r.type === filter && !r.is_draft && (!r.is_hidden || isAdminUser);
-    })
+  const filtered = recipes.filter(r => filter === 'tutti' || r.type === filter)
     .filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase()) || (r.author || '').toLowerCase().includes(search.toLowerCase()));
-
 
   // ─── PALETTE ────────────────────────────────────────────────────
   const c: Record<string, string> = { bg: '#F7F3EE', card: '#FFFFFF', accent: '#A8621A', accentLight: '#F2E4D0', accentMid: '#C4862A', text: '#2C2010', muted: '#8A7A65', border: '#E2D9CC', input: '#FDFAF6', red: '#C0392B', redLight: '#FDECEA', shadow: 'rgba(100,70,30,0.08)' };
@@ -690,32 +593,14 @@ const handleCancelForm = async () => {
       </div>
       {isGuest && <div style={{ background: '#FFFBF0', borderBottom: `1px solid #EDD080`, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, color: c.accentMid }}>👁️ Modalità ospite — solo visualizzazione</span>
-        <div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', overflowX: 'auto' }}>
-          {[
-            'tutti',
-            ...types,
-            // Tab Bozze: admin vede tutte, utente vede solo le sue
-            ...(session && recipes.some(r => r.is_draft && (isAdminUser || r.author === userName)) ? ['__bozze__'] : []),
-            // Tab Nascoste: solo admin
-            ...(isAdminUser && recipes.some(r => r.is_hidden && !r.is_draft) ? ['__nascoste__'] : []),
-          ].map(t => (
-            <button key={t} onClick={() => setFilter(t)} style={{
-              background: 'transparent',
-              color: filter === t ? (t === '__bozze__' ? '#8A5A00' : t === '__nascoste__' ? c.muted : c.accent) : c.muted,
-              border: 'none',
-              borderBottom: filter === t ? `2.5px solid ${t === '__bozze__' ? '#C4862A' : t === '__nascoste__' ? c.muted : c.accent}` : '2.5px solid transparent',
-              padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer',
-              fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500,
-              textTransform: 'capitalize', whiteSpace: 'nowrap',
-            }}>
-              {t === 'tutti' ? '📚 Tutte'
-                : t === '__bozze__' ? '📝 Bozze'
-                : t === '__nascoste__' ? '👁️ Nascoste'
-                : t}
-            </button>
-          ))}
-        </div></div>}
-
+        <button onClick={() => { setReqSent(false); setView('request_form'); }} style={{ ...A.btnO, fontSize: 11, padding: '4px 10px', borderColor: c.accentMid, color: c.accentMid }}>Richiedi accesso</button>
+      </div>}
+      {/* Tabs */}
+      <div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', overflowX: 'auto' }}>
+        {['tutti', ...types].map(t => (
+          <button key={t} onClick={() => setFilter(t)} style={{ background: 'transparent', color: filter === t ? c.accent : c.muted, border: 'none', borderBottom: filter === t ? `2.5px solid ${c.accent}` : '2.5px solid transparent', padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer', fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{t === 'tutti' ? '📚 Tutte' : t}</button>
+        ))}
+      </div>
       <div style={{ padding: '10px 16px 4px', color: c.muted, fontSize: 12, fontWeight: 600 }}>{filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter}` : ''}</div>
       {error && <div style={{ ...A.err, margin: '4px 16px 8px' }}>{error}</div>}
       {filtered.length === 0 ? (
@@ -726,19 +611,12 @@ const handleCancelForm = async () => {
         </div>
       ) : (
         <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16, padding: 16 }}>
-          {filtered.map(r => {
-            return (
-              <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
-                {r.photo_url ? (
-                  <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 148, objectFit: 'cover', display: 'block' }} />
-                ) : (
-                  <div style={{ width: '100%', height: 148, background: `linear-gradient(135deg,${c.accentLight},#EDD5B0)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 42 }}>🍽️</span></div>
-                )}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 7 }}>
-                  {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
-                  {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>BOZZA</div>}
-                  {r.is_hidden && !r.is_draft && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>NASCOSTA</div>}
-                </div>
+          {filtered.map(r => (
+            <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
+              {r.photo_url ? <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 148, objectFit: 'cover', display: 'block' }} />
+                : <div style={{ width: '100%', height: 148, background: `linear-gradient(135deg,${c.accentLight},#EDD5B0)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 42 }}>🍽️</span></div>}
+              <div style={{ padding: '12px 14px 14px' }}>
+                {r.type && <div style={{ ...A.tag, display: 'inline-block', marginBottom: 7 }}>{r.type}</div>}
                 <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 700, lineHeight: 1.3, marginBottom: 7 }}>{r.title}</div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: c.muted, fontSize: 12 }}>
                   {r.creation_time && <span>⏱ {r.creation_time}</span>}
@@ -747,8 +625,8 @@ const handleCancelForm = async () => {
                 </div>
                 <div style={{ color: c.muted, fontSize: 11, marginTop: 7, borderTop: `1px solid ${c.border}`, paddingTop: 7 }}>di <strong style={{ color: c.accentMid }}>{r.author}</strong></div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -844,18 +722,11 @@ const handleCancelForm = async () => {
   if (view === 'form') return (
     <div style={A.wrap}>
       <style>{css}</style>
-        <div style={A.hdr}>
-          <button className="hbtn" style={A.btnO} onClick={handleCancelForm}>← Annulla</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>
-              {form.id ? 'Modifica ricetta' : 'Nuova ricetta'}
-            </div>
-            <span style={{ fontSize: 11, color: c.muted }}>
-              {draftSaving ? '⏳ bozza...' : draftSaved ? '✓ salvata' : ''}
-            </span>
-          </div>
-          <MBtn />
-        </div>
+      <div style={A.hdr}>
+        <button className="hbtn" style={A.btnO} onClick={() => setView(current ? 'detail' : 'home')}>← Annulla</button>
+        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>{form.id ? 'Modifica ricetta' : 'Nuova ricetta'}</div>
+        <button className="hbtn" style={{ ...A.btn, opacity: (!form.title || saving || uploading) ? 0.5 : 1 }} onClick={handleSave} disabled={!form.title || saving || uploading}>{saving ? '⏳ Salvo...' : '✓ Salva'}</button>
+      </div>
       <div style={{ maxWidth: 780, margin: '0 auto', padding: '22px 16px 70px' }}>
         {error && <div style={A.err}>{error}</div>}
         <div style={{ ...A.box, padding: '20px 22px', marginBottom: 14 }}>
@@ -895,20 +766,6 @@ const handleCancelForm = async () => {
               <input style={A.inp} placeholder="Es. ~€8" value={form.cost} onChange={e => sf('cost', e.target.value)} />
             </div>
           </div>
-            {isAdminUser && (
-              <div style={{ ...A.fld, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  type="checkbox"
-                  id="is_hidden"
-                  checked={form.is_hidden || false}
-                  onChange={e => sf('is_hidden', e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: c.accent }}
-                />
-                <label htmlFor="is_hidden" style={{ ...A.lbl, marginBottom: 0, cursor: 'pointer', fontSize: 13, textTransform: 'none', letterSpacing: 0, fontWeight: 600, color: c.muted }}>
-                  Ricetta nascosta (visibile solo agli admin)
-                </label>
-              </div>
-            )}
           <div style={A.fld}><label style={A.lbl}>Autore</label>
             <AcInput value={form.author || userName} onChange={v => sf('author', v)} opts={authors} placeholder="Es. Marco Rossi" style={A.inp} field="author" />
           </div>
@@ -1211,7 +1068,7 @@ const handleCancelForm = async () => {
         return;
       }
       setReqSent(true);
-    } catch (_e) {
+    } catch {
       setError('Errore di connessione. Riprova.');
     }
   }}>Invia richiesta →</button>
