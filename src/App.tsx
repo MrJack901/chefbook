@@ -297,6 +297,7 @@ export default function ChefBook() {
   const [isGuest, setIsGuest] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [filter, setFilter] = useState('tutti');
   const [current, setCurrent] = useState<Recipe | null>(null);
@@ -343,6 +344,12 @@ export default function ChefBook() {
           if (u) {
             const info = await db.users.getOne(s.user.id, s.access_token);
             setSession(s); setIsAdminUser(info?.is_admin || false);
+                if (info?.is_admin) {
+                  const reqs = await db.requests.list(s.access_token);
+                  if (Array.isArray(reqs)) {
+                    setPendingCount(reqs.filter(r => r.status === 'pending').length);
+                  }
+                }
             await loadRecipes(s.access_token); setView('home'); return;
           }
         } catch {} localStorage.removeItem('cb-session');
@@ -359,6 +366,13 @@ export default function ChefBook() {
     const info = await db.users.getOne(s.user.id, s.access_token);
     localStorage.setItem('cb-session', JSON.stringify(s));
     setSession(s); setIsGuest(false); setIsAdminUser(info?.is_admin || false);
+    // Dopo: setIsAdminUser(info?.is_admin || false);
+                  if (info?.is_admin) {
+                    const reqs = await db.requests.list(s.access_token);
+                    if (Array.isArray(reqs)) {
+                      setPendingCount(reqs.filter(r => r.status === 'pending').length);
+                    }
+                  }
     await loadRecipes(s.access_token); setLoginLoading(false); setView('home');
   };
 
@@ -498,8 +512,26 @@ export default function ChefBook() {
     @media(max-width:400px){.rgrid{grid-template-columns:1fr!important}}
   `;
 
-  const MBtn = () => <button className="hbtn" onClick={() => setMenuOpen(true)} style={{ ...A.btnO, padding: '8px 12px', fontSize: 17 }}>☰</button>;
-
+  const MBtn = () => (
+    <button className="hbtn" onClick={() => setMenuOpen(true)}
+      style={{ ...A.btnO, padding: '8px 12px', fontSize: 17, position: 'relative' }}>
+      ☰
+      {isAdminUser && pendingCount > 0 && (
+        <span style={{
+          position: 'absolute', top: -6, right: -6,
+          background: c.red, color: '#fff',
+          borderRadius: '50%', width: 18, height: 18,
+          fontSize: 10, fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: "'Nunito',sans-serif",
+          boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
+        }}>
+          {pendingCount > 9 ? '9+' : pendingCount}
+        </span>
+      )}
+    </button>
+  );
+  
   // ─── LOADING ─────────────────────────────────────────────────────
   if (view === 'loading') return <div style={{ ...A.wrap, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}><style>{css}</style><div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 40, color: c.accent }}>👨‍🍳 Chef's Book</div><div style={{ color: c.muted, fontSize: 13 }}><span className="spin">⟳</span> Connessione...</div></div>;
 
@@ -924,6 +956,8 @@ export default function ChefBook() {
                                   const j = await res.json();
                                   if (!res.ok) { alert(`Errore: ${j.error}`); return; }
                                   setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
+                                  // dopo setRequests nei bottoni Approva e Rifiuta
+                                  setPendingCount(prev => Math.max(0, prev - 1));
                                   alert(`✅ Account creato per ${req.display_name}!`);
                                 } catch {
                                   alert('Errore di connessione. Riprova.');
@@ -932,6 +966,8 @@ export default function ChefBook() {
                           <button className="hbtn" style={{ ...A.btnR, fontSize: 12, padding: '6px 12px' }} onClick={async () => {
                             await db.requests.setStatus(req.id, 'rejected', tok()!);
                             setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' } : r));
+                            // dopo setRequests nei bottoni Approva e Rifiuta
+                            setPendingCount(prev => Math.max(0, prev - 1));
                           }}>✗ Rifiuta</button>
                         </>
                       ) : (
