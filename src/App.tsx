@@ -527,7 +527,7 @@ export default function ChefBook() {
     }
     setDraftSaved(true);
     setTimeout(() => setDraftSaved(false), 2000);
-  } catch {}
+  } catch (_e) {}
   setDraftSaving(false);
 };
 
@@ -555,7 +555,9 @@ const handleCancelForm = async () => {
 
   const handleDelete = async (id: string) => { await db.recipes.delete(id, tok()!); setRecipes(prev => prev.filter(r => r.id !== id)); setView('home'); };
 
-  const sf = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
+  const sf = function <K extends keyof FormState>(k: K, v: FormState[K]) {
+    return setForm(p => ({ ...p, [k]: v }));
+  };
 
   const filtered = recipes
     .filter(r => {
@@ -847,7 +849,7 @@ const handleCancelForm = async () => {
               {draftSaving ? '⏳ bozza...' : draftSaved ? '✓ salvata' : ''}
             </span>
           </div>
-          <button className="hbtn" style={{ ...A.btn, opacity: ... }}>...</button>
+          <MBtn />
         </div>
       <div style={{ maxWidth: 780, margin: '0 auto', padding: '22px 16px 70px' }}>
         {error && <div style={A.err}>{error}</div>}
@@ -868,11 +870,6 @@ const handleCancelForm = async () => {
             <div style={A.fld}><label style={A.lbl}>Tipologia *{!isAdminUser && types.length > 0 && <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}> (scegli tra le esistenti)</span>}</label>
               <TypeInput value={form.type} onChange={v => sf('type', v)} types={types} isAdmin={isAdminUser} style={A.inp} />
             </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
-                {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>📝 BOZZA</div>}
-                {r.is_hidden && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>👁️ NASCOSTA</div>}
-              </div>
             <div style={A.fld}><label style={A.lbl}>Peso * <span style={{ color: c.muted, fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>(in gr)</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="number" min="0.001" step="0.001" placeholder="Es. 750" style={{ ...A.inp, flex: 1 }} value={parseW(form.weight) ?? ''} onChange={e => sf('weight', e.target.value)} />
@@ -1209,7 +1206,7 @@ const handleCancelForm = async () => {
         return;
       }
       setReqSent(true);
-    } catch {
+    } catch (_e) {
       setError('Errore di connessione. Riprova.');
     }
   }}>Invia richiesta →</button>
