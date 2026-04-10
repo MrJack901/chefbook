@@ -714,7 +714,8 @@ const handleCancelForm = async () => {
                 : t}
             </button>
           ))}
-        </div>
+        </div></div>}
+
       <div style={{ padding: '10px 16px 4px', color: c.muted, fontSize: 12, fontWeight: 600 }}>{filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter}` : ''}</div>
       {error && <div style={{ ...A.err, margin: '4px 16px 8px' }}>{error}</div>}
       {filtered.length === 0 ? (
@@ -725,15 +726,19 @@ const handleCancelForm = async () => {
         </div>
       ) : (
         <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16, padding: 16 }}>
-          {filtered.map(r => (
-            <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
-              {r.photo_url ? <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 148, objectFit: 'cover', display: 'block' }} />
-                : <div style={{ width: '100%', height: 148, background: `linear-gradient(135deg,${c.accentLight},#EDD5B0)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 42 }}>🍽️</span></div>}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 7 }}>
-                    {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
-                    {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>BOZZA</div>}
-                    {r.is_hidden && !r.is_draft && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>NASCOSTA</div>}
-                  </div>
+          {filtered.map(r => {
+            return (
+              <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
+                {r.photo_url ? (
+                  <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 148, objectFit: 'cover', display: 'block' }} />
+                ) : (
+                  <div style={{ width: '100%', height: 148, background: `linear-gradient(135deg,${c.accentLight},#EDD5B0)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 42 }}>🍽️</span></div>
+                )}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 7 }}>
+                  {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
+                  {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>BOZZA</div>}
+                  {r.is_hidden && !r.is_draft && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>NASCOSTA</div>}
+                </div>
                 <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 700, lineHeight: 1.3, marginBottom: 7 }}>{r.title}</div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: c.muted, fontSize: 12 }}>
                   {r.creation_time && <span>⏱ {r.creation_time}</span>}
@@ -742,8 +747,8 @@ const handleCancelForm = async () => {
                 </div>
                 <div style={{ color: c.muted, fontSize: 11, marginTop: 7, borderTop: `1px solid ${c.border}`, paddingTop: 7 }}>di <strong style={{ color: c.accentMid }}>{r.author}</strong></div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
