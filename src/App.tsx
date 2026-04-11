@@ -14,11 +14,13 @@ interface Recipe {
   date: string | null; type: string; weight: string; servings: number;
   ingredients: string; procedure: string; photo_url: string;
   notes: string; cost: string; author: string;
+  is_hidden: boolean; is_draft: boolean;
 }
 interface FormState {
   id: string | null; title: string; creation_time: string; date: string;
   type: string; weight: string; servings: number; ingredients: string;
   procedure: string; photo_url: string; notes: string; cost: string; author: string;
+  is_hidden: boolean; is_draft: boolean;
 }
 interface AppUser { id: string; email: string; display_name: string | null; is_admin: boolean; created_at: string }
 interface AccountRequest { id: string; email: string; display_name: string; message: string | null; status: string; created_at: string }
@@ -109,22 +111,15 @@ const db = {
     delete: async (userId: string, token: string) => fetch(`${SUPABASE_URL}/rest/v1/rpc/delete_auth_user`, { method: 'POST', headers: makeHdr(token), body: JSON.stringify({ target_user_id: userId }) }),
   },
   requests: {
-    list: async (token: string): Promise<AccountRequest[]> => 
+    list: async (token: string): Promise<AccountRequest[]> =>
       (await fetch(`${SUPABASE_URL}/rest/v1/account_requests?order=created_at.desc`, { headers: makeHdr(token) })).json(),
-    
-    insert: async (data: { email: string; display_name: string; message: string }) => 
-      fetch(`${SUPABASE_URL}/rest/v1/account_requests`, { 
-        method: 'POST', 
-        headers: { 
-          'apikey': SUPABASE_ANON_KEY, 
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'   // ← cambiato da return=representation
-        }, 
-        body: JSON.stringify(data) 
+    insert: async (data: { email: string; display_name: string; message: string }) =>
+      fetch(`${SUPABASE_URL}/rest/v1/account_requests`, {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(data)
       }),
-    
-    setStatus: async (id: string, status: string, token: string) => 
+    setStatus: async (id: string, status: string, token: string) =>
       fetch(`${SUPABASE_URL}/rest/v1/account_requests?id=eq.${id}`, { method: 'PATCH', headers: makeHdr(token), body: JSON.stringify({ status }) }),
   }
 };
@@ -137,7 +132,11 @@ const uploadPhoto = async (file: File, token: string): Promise<string> => {
   return `${SUPABASE_URL}/storage/v1/object/public/recipe-photos/${name}`;
 };
 
-const emptyForm = (author: string): FormState => ({ id: null, title: '', creation_time: '', date: '', type: '', weight: '', servings: 1, ingredients: '', procedure: '', photo_url: '', notes: '', cost: '', author });
+const emptyForm = (author: string): FormState => ({
+  id: null, title: '', creation_time: '', date: '', type: '', weight: '',
+  servings: 1, ingredients: '', procedure: '', photo_url: '', notes: '',
+  cost: '', author, is_hidden: false, is_draft: false
+});
 
 // ─── COMPONENTI ────────────────────────────────────────────────────
 function IngLine({ raw, c }: { raw: string; c: Record<string, string> }) {
@@ -211,7 +210,6 @@ function SideMenu({ open, onClose, session, isGuest, isAdmin, onLogout, onProfil
   onLogout: () => void; onProfile: () => void; onAdminPanel: () => void; onRequestForm: () => void;
   c: Record<string, string>; A: Record<string, CSSProperties>;
 }) {
-  const adminEmail = 'toffolettonicolo@yahoo.it';
   return (
     <>
       {open && <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(44,32,16,0.35)', zIndex: 300, backdropFilter: 'blur(2px)' }} />}
@@ -220,39 +218,24 @@ function SideMenu({ open, onClose, session, isGuest, isAdmin, onLogout, onProfil
           <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, fontWeight: 700, color: c.accent }}>👨‍🍳 Chef's Book</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: c.muted }}>×</button>
         </div>
-
         <div style={{ padding: '16px 20px', flex: 1 }}>
-          {/* Utente corrente */}
           <div style={{ background: c.accentLight, borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, letterSpacing: '.08em', textTransform: 'uppercase' as const, marginBottom: 4 }}>Accesso come</div>
-            <div style={{ fontWeight: 700, color: c.text, fontSize: 14 }}>
-              {isGuest ? '👤 Ospite' : `👨‍🍳 ${session ? dispName(session) : ''}`}
-            </div>
+            <div style={{ fontWeight: 700, color: c.text, fontSize: 14 }}>{isGuest ? '👤 Ospite' : `👨‍🍳 ${session ? dispName(session) : ''}`}</div>
             {isAdmin && <div style={{ marginTop: 4, background: c.accent, color: '#FFF8F0', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 7px', display: 'inline-block' }}>ADMIN</div>}
             {isGuest && <div style={{ marginTop: 4, fontSize: 11, color: c.muted }}>Solo visualizzazione</div>}
           </div>
-
-          {/* Links */}
           {!isGuest && session && (
-            <button onClick={() => { onClose(); onProfile(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 4, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.text, fontWeight: 600 }}>
-              ⚙️ Il mio profilo
-            </button>
+            <button onClick={() => { onClose(); onProfile(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 4, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.text, fontWeight: 600 }}>⚙️ Il mio profilo</button>
           )}
           {isAdmin && (
-            <button onClick={() => { onClose(); onAdminPanel(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 4, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.accent, fontWeight: 700 }}>
-              🛡️ Pannello Admin
-            </button>
+            <button onClick={() => { onClose(); onAdminPanel(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 4, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.accent, fontWeight: 700 }}>🛡️ Pannello Admin</button>
           )}
-          <button onClick={() => { onClose(); onRequestForm(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 20, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.text, fontWeight: 600 }}>
-            ✉️ Richiedi account
-          </button>
-
-          {/* Info */}
+          <button onClick={() => { onClose(); onRequestForm(); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderBottom: `1px solid ${c.border}`, marginBottom: 20, fontFamily: "'Nunito',sans-serif", fontSize: 14, color: c.text, fontWeight: 600 }}>✉️ Richiedi account</button>
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, color: c.accent, marginBottom: 8 }}>📖 Cos'è Chef's Book?</div>
             <div style={{ fontSize: 12, color: c.muted, lineHeight: 1.7 }}>Il ricettario digitale condiviso della cucina. Permette di raccogliere, organizzare e consultare le ricette, con il calcolatore automatico degli ingredienti per porzioni o peso diversi.</div>
           </div>
-
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, color: c.accent, marginBottom: 8 }}>🔐 Livelli di accesso</div>
             {[
@@ -266,7 +249,6 @@ function SideMenu({ open, onClose, session, isGuest, isAdmin, onLogout, onProfil
               </div>
             ))}
           </div>
-
           {(isGuest || !session) && (
             <div style={{ background: '#FFFBF0', border: `1px solid #EDD080`, borderRadius: 10, padding: '14px', marginBottom: 20 }}>
               <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 14, fontWeight: 700, color: c.accentMid, marginBottom: 6 }}>Vuoi contribuire?</div>
@@ -274,10 +256,8 @@ function SideMenu({ open, onClose, session, isGuest, isAdmin, onLogout, onProfil
               <button onClick={() => { onClose(); onRequestForm(); }} style={{ ...A.btn, width: '100%', background: c.accentMid, textAlign: 'center' as const, justifyContent: 'center', display: 'flex', fontSize: 13 }}>Invia richiesta →</button>
             </div>
           )}
-
           <div style={{ fontSize: 11, color: c.muted, textAlign: 'center' as const }}>Chef's Book · Ricettario professionale</div>
         </div>
-
         <div style={{ padding: '14px 20px', borderTop: `1px solid ${c.border}` }}>
           {!isGuest && session ? (
             <button onClick={onLogout} style={{ ...A.btnO, width: '100%', textAlign: 'center' as const, justifyContent: 'center', display: 'flex' }}>Esci dall'account</button>
@@ -311,6 +291,11 @@ export default function ChefBook() {
   const [syncing, setSyncing] = useState(false);
   const [curServings, setCurServings] = useState(1);
   const [curWeight, setCurWeight] = useState('');
+  // Draft auto-save
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftIdRef = useRef<string | null>(null);
   // Login
   const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false); const [loginLoading, setLoginLoading] = useState(false);
   // Profile
@@ -322,7 +307,7 @@ export default function ChefBook() {
   const [reqEmail, setReqEmail] = useState(''); const [reqName, setReqName] = useState(''); const [reqMsg, setReqMsg] = useState(''); const [reqSent, setReqSent] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const types = Array.from(new Set(recipes.map(r => r.type).filter(Boolean)));
+  const types = Array.from(new Set(recipes.filter(r => !r.is_draft && !r.is_hidden).map(r => r.type).filter(Boolean)));
   const authors = Array.from(new Set(recipes.map(r => r.author).filter(Boolean)));
   const tok = () => session?.access_token;
   const userName = session ? dispName(session) : isGuest ? 'Ospite' : '';
@@ -344,12 +329,10 @@ export default function ChefBook() {
           if (u) {
             const info = await db.users.getOne(s.user.id, s.access_token);
             setSession(s); setIsAdminUser(info?.is_admin || false);
-                if (info?.is_admin) {
-                  const reqs = await db.requests.list(s.access_token);
-                  if (Array.isArray(reqs)) {
-                    setPendingCount(reqs.filter(r => r.status === 'pending').length);
-                  }
-                }
+            if (info?.is_admin) {
+              const reqs = await db.requests.list(s.access_token);
+              if (Array.isArray(reqs)) setPendingCount(reqs.filter(r => r.status === 'pending').length);
+            }
             await loadRecipes(s.access_token); setView('home'); return;
           }
         } catch {} localStorage.removeItem('cb-session');
@@ -357,6 +340,48 @@ export default function ChefBook() {
       setView('login');
     })();
   }, []);
+
+  // Auto-save bozza mentre si compila il form
+  useEffect(() => {
+    if (view !== 'form' || !session) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => { saveDraft(form, steps); }, 3000);
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
+  }, [form, steps, view]);
+
+  const saveDraft = async (currentForm: FormState, currentSteps: string[]) => {
+    if (!session || !currentForm.title.trim()) return;
+    setDraftSaving(true);
+    try {
+      const data: Partial<Recipe> = {
+        title: currentForm.title,
+        creation_time: currentForm.creation_time,
+        date: currentForm.date || null,
+        type: currentForm.type,
+        weight: currentForm.weight,
+        servings: currentForm.servings || 1,
+        ingredients: currentForm.ingredients,
+        procedure: stepsToDb(currentSteps),
+        photo_url: currentForm.photo_url,
+        notes: currentForm.notes,
+        cost: currentForm.cost,
+        author: currentForm.author || userName,
+        is_hidden: currentForm.is_hidden || false,
+        is_draft: true,
+      };
+      if (draftIdRef.current) {
+        await db.recipes.update(draftIdRef.current, data, tok()!);
+      } else if (!currentForm.id) {
+        const saved = await db.recipes.insert(data, tok()!);
+        draftIdRef.current = saved.id;
+        setForm(prev => ({ ...prev, id: saved.id }));
+        setRecipes(prev => [saved, ...prev.filter(r => r.id !== saved.id)]);
+      }
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 2000);
+    } catch {}
+    setDraftSaving(false);
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !pw.trim()) return;
@@ -366,13 +391,10 @@ export default function ChefBook() {
     const info = await db.users.getOne(s.user.id, s.access_token);
     localStorage.setItem('cb-session', JSON.stringify(s));
     setSession(s); setIsGuest(false); setIsAdminUser(info?.is_admin || false);
-    // Dopo: setIsAdminUser(info?.is_admin || false);
-                  if (info?.is_admin) {
-                    const reqs = await db.requests.list(s.access_token);
-                    if (Array.isArray(reqs)) {
-                      setPendingCount(reqs.filter(r => r.status === 'pending').length);
-                    }
-                  }
+    if (info?.is_admin) {
+      const reqs = await db.requests.list(s.access_token);
+      if (Array.isArray(reqs)) setPendingCount(reqs.filter(r => r.status === 'pending').length);
+    }
     await loadRecipes(s.access_token); setLoginLoading(false); setView('home');
   };
 
@@ -413,11 +435,37 @@ export default function ChefBook() {
     setProfLoading(false);
   };
 
-  const newRecipe = () => { setForm(emptyForm(userName)); setSteps(['']); setPhotoPreview(null); setCurrent(null); setView('form'); };
-  const editRecipe = (r: Recipe) => { setForm({ ...r, date: r.date || '' }); setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setView('form'); };
-  const duplicateRecipe = (r: Recipe) => { setForm({ ...r, id: null, date: r.date || '', title: `${r.title} (copia)`, author: userName }); setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setCurrent(null); setView('form'); };
+  const newRecipe = () => {
+    draftIdRef.current = null;
+    setForm(emptyForm(userName)); setSteps(['']); setPhotoPreview(null); setCurrent(null); setView('form');
+  };
+
+  const editRecipe = (r: Recipe) => {
+    draftIdRef.current = null;
+    setForm({ ...r, date: r.date || '', is_hidden: r.is_hidden || false, is_draft: r.is_draft || false });
+    setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setView('form');
+  };
+
+  const duplicateRecipe = (r: Recipe) => {
+    draftIdRef.current = null;
+    setForm({ ...r, id: null, date: r.date || '', title: `${r.title} (copia)`, author: userName, is_hidden: false, is_draft: false });
+    setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setCurrent(null); setView('form');
+  };
+
   const openDetail = (r: Recipe) => { setCurrent(r); setCurServings(r.servings || 1); setCurWeight(r.weight || ''); setView('detail'); };
   const canEdit = (r: Recipe) => !isGuest && session && (isAdminUser || r.author === userName);
+
+  const handleCancelForm = async () => {
+    if (draftIdRef.current && !current) {
+      const keep = window.confirm('Vuoi mantenere la bozza? OK = tienila, Annulla = eliminala.');
+      if (!keep) {
+        await db.recipes.delete(draftIdRef.current, tok()!);
+        setRecipes(prev => prev.filter(r => r.id !== draftIdRef.current));
+      }
+      draftIdRef.current = null;
+    }
+    setView(current ? 'detail' : 'home');
+  };
 
   const handlePhoto = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -432,7 +480,7 @@ export default function ChefBook() {
     if (!isAdminUser && form.type && !types.includes(form.type)) return 'Seleziona una tipologia esistente';
     if (!form.weight) return 'Il peso è obbligatorio';
     const wNum = parseFloat(form.weight.replace(',', '.'));
-    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 0.750)';
+    if (isNaN(wNum) || wNum <= 0) return 'Inserisci un peso valido (es. 750)';
     if (form.ingredients.split('\n').filter(l => l.trim()).length < 3) return 'Inserisci almeno 3 righe di ingredienti';
     if (!steps.some(s => s.trim())) return 'Inserisci almeno un passo nel procedimento';
     return null;
@@ -449,18 +497,23 @@ export default function ChefBook() {
         type: form.type, weight: weightStr, servings: form.servings || 1,
         ingredients: form.ingredients, procedure: stepsToDb(steps),
         photo_url: form.photo_url, notes: form.notes, cost: form.cost,
-        author: form.author || userName
+        author: form.author || userName,
+        is_hidden: isAdminUser ? (form.is_hidden || false) : false,
+        is_draft: false, // salvataggio definitivo = esce dalla bozza
       };
-      if (form.id) {
-        await db.recipes.update(form.id, data, tok()!);
-        const updated = { ...form, ...data, id: form.id } as Recipe;
-        setRecipes(prev => prev.map(r => r.id === form.id ? updated : r));
+      // Se c'era una bozza salvata con questo id, aggiorniamo quella
+      const idToUse = form.id || draftIdRef.current;
+      if (idToUse) {
+        await db.recipes.update(idToUse, data, tok()!);
+        const updated = { ...form, ...data, id: idToUse } as Recipe;
+        setRecipes(prev => prev.map(r => r.id === idToUse ? updated : r));
         setCurrent(updated); setCurServings(data.servings ?? 1); setCurWeight(data.weight || '');
       } else {
         const saved = await db.recipes.insert(data, tok()!);
         setRecipes(prev => [saved, ...prev]); setCurrent(saved);
         setCurServings(saved.servings || 1); setCurWeight(saved.weight || '');
       }
+      draftIdRef.current = null;
       setView('detail');
     } catch { setError('Errore salvataggio.'); } setSaving(false);
   };
@@ -469,8 +522,23 @@ export default function ChefBook() {
 
   const sf = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
 
-  const filtered = recipes.filter(r => filter === 'tutti' || r.type === filter)
+  // Filtra le ricette in base al tab selezionato
+  const filtered = recipes
+    .filter(r => {
+      if (filter === '__bozze__') return r.is_draft && (isAdminUser || r.author === userName);
+      if (filter === '__nascoste__') return r.is_hidden && !r.is_draft && isAdminUser;
+      if (filter === 'tutti') return !r.is_draft && (!r.is_hidden || isAdminUser);
+      return r.type === filter && !r.is_draft && (!r.is_hidden || isAdminUser);
+    })
     .filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase()) || (r.author || '').toLowerCase().includes(search.toLowerCase()));
+
+  // Tabs da mostrare
+  const tabList = [
+    'tutti',
+    ...types,
+    ...(session && recipes.some(r => r.is_draft && (isAdminUser || r.author === userName)) ? ['__bozze__'] : []),
+    ...(isAdminUser && recipes.some(r => r.is_hidden && !r.is_draft) ? ['__nascoste__'] : []),
+  ];
 
   // ─── PALETTE ────────────────────────────────────────────────────
   const c: Record<string, string> = { bg: '#F7F3EE', card: '#FFFFFF', accent: '#A8621A', accentLight: '#F2E4D0', accentMid: '#C4862A', text: '#2C2010', muted: '#8A7A65', border: '#E2D9CC', input: '#FDFAF6', red: '#C0392B', redLight: '#FDECEA', shadow: 'rgba(100,70,30,0.08)' };
@@ -513,19 +581,10 @@ export default function ChefBook() {
   `;
 
   const MBtn = () => (
-    <button className="hbtn" onClick={() => setMenuOpen(true)}
-      style={{ ...A.btnO, padding: '8px 12px', fontSize: 17, position: 'relative' }}>
+    <button className="hbtn" onClick={() => setMenuOpen(true)} style={{ ...A.btnO, padding: '8px 12px', fontSize: 17, position: 'relative' }}>
       ☰
       {isAdminUser && pendingCount > 0 && (
-        <span style={{
-          position: 'absolute', top: -6, right: -6,
-          background: c.red, color: '#fff',
-          borderRadius: '50%', width: 18, height: 18,
-          fontSize: 10, fontWeight: 700,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: "'Nunito',sans-serif",
-          boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
-        }}>
+        <span style={{ position: 'absolute', top: -6, right: -6, background: c.red, color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Nunito',sans-serif", boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }}>
           {pendingCount > 9 ? '9+' : pendingCount}
         </span>
       )}
@@ -572,21 +631,17 @@ export default function ChefBook() {
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); setReqEmail(''); setReqName(''); setReqMsg(''); setView('request_form'); }} c={c} A={A} />
       <div style={A.hdr}>
         <div style={A.logo}>👨‍🍳 Chef's Book</div>
-        {/* Desktop */}
         <div className="dsk" style={{ alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
           <input style={{ ...A.inp, maxWidth: 200, padding: '7px 12px', fontSize: 13 }} placeholder="🔍 Cerca ricetta..." value={search} onChange={e => setSearch(e.target.value)} />
           <button className="hbtn" style={{ ...A.btnO, padding: '7px 11px', fontSize: 16 }} onClick={() => loadRecipes(tok())}>{syncing ? <span className="spin">⟳</span> : '⟳'}</button>
           <span style={{ color: c.muted, fontSize: 12, whiteSpace: 'nowrap' }}>👤 <strong style={{ color: c.text }}>{userName}</strong>{isAdminUser && <span style={{ background: c.accent, color: '#FFF', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px', marginLeft: 4 }}>ADMIN</span>}</span>
           {!isGuest && <button className="hbtn" style={A.btn} onClick={newRecipe}>+ Nuova ricetta</button>}
         </div>
-        {/* Mobile */}
         <div className="mob" style={{ alignItems: 'center', gap: 8 }}>
           {!isGuest && <button className="hbtn" style={A.btn} onClick={newRecipe}>+ Nuova</button>}
         </div>
-        {/* Menu sempre visibile */}
         <MBtn />
       </div>
-      {/* Mobile search row */}
       <div className="mob-row">
         <input style={{ ...A.inp, fontSize: 14 }} placeholder="🔍 Cerca ricetta o autore..." value={search} onChange={e => setSearch(e.target.value)} />
         <button className="hbtn" style={{ ...A.btnO, padding: '9px 11px', fontSize: 16, flexShrink: 0 }} onClick={() => loadRecipes(tok())}>{syncing ? <span className="spin">⟳</span> : '⟳'}</button>
@@ -595,13 +650,27 @@ export default function ChefBook() {
         <span style={{ fontSize: 13, color: c.accentMid }}>👁️ Modalità ospite — solo visualizzazione</span>
         <button onClick={() => { setReqSent(false); setView('request_form'); }} style={{ ...A.btnO, fontSize: 11, padding: '4px 10px', borderColor: c.accentMid, color: c.accentMid }}>Richiedi accesso</button>
       </div>}
-      {/* Tabs */}
+
+      {/* Tabs tipologie + bozze + nascoste */}
       <div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', overflowX: 'auto' }}>
-        {['tutti', ...types].map(t => (
-          <button key={t} onClick={() => setFilter(t)} style={{ background: 'transparent', color: filter === t ? c.accent : c.muted, border: 'none', borderBottom: filter === t ? `2.5px solid ${c.accent}` : '2.5px solid transparent', padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer', fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{t === 'tutti' ? '📚 Tutte' : t}</button>
-        ))}
+        {tabList.map(t => {
+          const isSpecial = t === '__bozze__' || t === '__nascoste__';
+          const label = t === 'tutti' ? '📚 Tutte' : t === '__bozze__' ? '📝 Bozze' : t === '__nascoste__' ? '👁️ Nascoste' : t;
+          const activeColor = t === '__bozze__' ? '#8A5A00' : t === '__nascoste__' ? c.muted : c.accent;
+          const activeBorder = t === '__bozze__' ? '#C4862A' : t === '__nascoste__' ? c.muted : c.accent;
+          return (
+            <button key={t} onClick={() => setFilter(t)} style={{
+              background: 'transparent', color: filter === t ? activeColor : c.muted, border: 'none',
+              borderBottom: filter === t ? `2.5px solid ${activeBorder}` : '2.5px solid transparent',
+              padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer',
+              fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500,
+              textTransform: isSpecial ? 'none' : 'capitalize', whiteSpace: 'nowrap'
+            }}>{label}</button>
+          );
+        })}
       </div>
-      <div style={{ padding: '10px 16px 4px', color: c.muted, fontSize: 12, fontWeight: 600 }}>{filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter}` : ''}</div>
+
+      <div style={{ padding: '10px 16px 4px', color: c.muted, fontSize: 12, fontWeight: 600 }}>{filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter === '__bozze__' ? 'bozze' : filter === '__nascoste__' ? 'nascoste' : filter}` : ''}</div>
       {error && <div style={{ ...A.err, margin: '4px 16px 8px' }}>{error}</div>}
       {filtered.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '70px 24px', gap: 14, textAlign: 'center' }}>
@@ -612,11 +681,16 @@ export default function ChefBook() {
       ) : (
         <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16, padding: 16 }}>
           {filtered.map(r => (
-            <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
+            <div key={r.id} className="hcard" style={{ background: c.card, borderRadius: 14, border: `1px solid ${r.is_draft ? '#EDD080' : r.is_hidden ? c.border : c.border}`, overflow: 'hidden', cursor: 'pointer', boxShadow: `0 2px 10px ${c.shadow}` }} onClick={() => openDetail(r)}>
               {r.photo_url ? <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 148, objectFit: 'cover', display: 'block' }} />
                 : <div style={{ width: '100%', height: 148, background: `linear-gradient(135deg,${c.accentLight},#EDD5B0)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 42 }}>🍽️</span></div>}
               <div style={{ padding: '12px 14px 14px' }}>
-                {r.type && <div style={{ ...A.tag, display: 'inline-block', marginBottom: 7 }}>{r.type}</div>}
+                {/* Badge tipologia + bozza + nascosta */}
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+                  {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
+                  {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>📝 BOZZA</div>}
+                  {r.is_hidden && !r.is_draft && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>👁️ NASCOSTA</div>}
+                </div>
                 <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 700, lineHeight: 1.3, marginBottom: 7 }}>{r.title}</div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: c.muted, fontSize: 12 }}>
                   {r.creation_time && <span>⏱ {r.creation_time}</span>}
@@ -655,7 +729,14 @@ export default function ChefBook() {
         </div>
         <div style={{ maxWidth: 780, margin: '0 auto', padding: '26px 16px 70px' }}>
           {r.photo_url && <img src={r.photo_url} alt={r.title} style={{ width: '100%', height: 270, objectFit: 'cover', borderRadius: 14, marginBottom: 22, display: 'block', boxShadow: `0 8px 32px ${c.shadow}` }} />}
-          {r.type && <div style={{ ...A.tag, display: 'inline-block', marginBottom: 10 }}>{r.type}</div>}
+
+          {/* Badge tipologia + bozza + nascosta nel dettaglio */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            {r.type && <div style={{ ...A.tag, display: 'inline-block' }}>{r.type}</div>}
+            {r.is_draft && <div style={{ background: '#FFF3CD', color: '#8A5A00', borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>📝 BOZZA — non ancora pubblicata</div>}
+            {r.is_hidden && !r.is_draft && isAdminUser && <div style={{ background: '#F0F0F0', color: c.muted, borderRadius: 20, padding: '3px 12px', fontSize: 11, fontWeight: 700 }}>👁️ NASCOSTA</div>}
+          </div>
+
           <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 34, fontWeight: 700, lineHeight: 1.15, marginBottom: 18, color: c.text }}>{r.title}</h1>
           <div className="mstrip" style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 22, background: c.accentLight, borderRadius: 12, overflow: 'hidden', border: `1px solid ${c.border}` }}>
             {([r.creation_time ? { icon: '⏱', label: 'Tempo', value: r.creation_time } : null, r.weight ? { icon: '⚖️', label: 'Peso base', value: r.weight } : null, r.cost ? { icon: '💰', label: 'Costo', value: r.cost } : null, r.date ? { icon: '📅', label: 'Data', value: r.date } : null, { icon: '👨‍🍳', label: 'Autore', value: r.author, accent: true }] as (MetaItem | null)[]).filter((m): m is MetaItem => m !== null).map((m, i, arr) => (
@@ -693,9 +774,7 @@ export default function ChefBook() {
                   {modified && <div style={{ background: c.accentLight, borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: c.accent }}>×{Math.round(mul * 100) / 100}</div>}
                 </div>
               </div>
-
-              <div style={{ textAlign: 'left' }}>{mulIng.split('\n').map((line, i) => <IngLine key={i} raw={line} c={c} />)}
-              </div>
+              <div style={{ textAlign: 'left' }}>{mulIng.split('\n').map((line, i) => <IngLine key={i} raw={line} c={c} />)}</div>
             </div>
           )}
           {pSteps.some(s => s.trim()) && (
@@ -723,8 +802,13 @@ export default function ChefBook() {
     <div style={A.wrap}>
       <style>{css}</style>
       <div style={A.hdr}>
-        <button className="hbtn" style={A.btnO} onClick={() => setView(current ? 'detail' : 'home')}>← Annulla</button>
-        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>{form.id ? 'Modifica ricetta' : 'Nuova ricetta'}</div>
+        <button className="hbtn" style={A.btnO} onClick={handleCancelForm}>← Annulla</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>{form.id ? 'Modifica ricetta' : 'Nuova ricetta'}</div>
+          <span style={{ fontSize: 11, color: c.muted }}>
+            {draftSaving ? '⏳ bozza...' : draftSaved ? '✓ salvata' : ''}
+          </span>
+        </div>
         <button className="hbtn" style={{ ...A.btn, opacity: (!form.title || saving || uploading) ? 0.5 : 1 }} onClick={handleSave} disabled={!form.title || saving || uploading}>{saving ? '⏳ Salvo...' : '✓ Salva'}</button>
       </div>
       <div style={{ maxWidth: 780, margin: '0 auto', padding: '22px 16px 70px' }}>
@@ -766,6 +850,16 @@ export default function ChefBook() {
               <input style={A.inp} placeholder="Es. ~€8" value={form.cost} onChange={e => sf('cost', e.target.value)} />
             </div>
           </div>
+          {/* Checkbox nascosta — solo admin */}
+          {isAdminUser && (
+            <div style={{ ...A.fld, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" id="is_hidden" checked={form.is_hidden || false} onChange={e => sf('is_hidden', e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: c.accent }} />
+              <label htmlFor="is_hidden" style={{ ...A.lbl, marginBottom: 0, cursor: 'pointer', fontSize: 13, textTransform: 'none', letterSpacing: 0, fontWeight: 600, color: c.muted }}>
+                Ricetta nascosta (visibile solo agli admin)
+              </label>
+            </div>
+          )}
           <div style={A.fld}><label style={A.lbl}>Autore</label>
             <AcInput value={form.author || userName} onChange={v => sf('author', v)} opts={authors} placeholder="Es. Marco Rossi" style={A.inp} field="author" />
           </div>
@@ -822,20 +916,16 @@ export default function ChefBook() {
       </div>
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '28px 16px 70px' }}>
         {profMsg && <div style={{ ...A.err, background: profMsg.startsWith('✓') ? '#F0FAF4' : c.redLight, border: `1px solid ${profMsg.startsWith('✓') ? '#A8D5B5' : '#F5C6C2'}`, color: profMsg.startsWith('✓') ? '#2E7D4F' : c.red }}>{profMsg}</div>}
-
         <div style={{ ...A.box, padding: '22px 24px', marginBottom: 16 }}>
           <div style={A.sec}>Informazioni account</div>
-          <div style={A.fld}>
-            <label style={A.lbl}>Email (non modificabile)</label>
+          <div style={A.fld}><label style={A.lbl}>Email (non modificabile)</label>
             <input style={{ ...A.inp, color: c.muted, cursor: 'not-allowed' }} value={session.user.email} disabled />
           </div>
-          <div style={A.fld}>
-            <label style={A.lbl}>Nome visualizzato</label>
+          <div style={A.fld}><label style={A.lbl}>Nome visualizzato</label>
             <input style={A.inp} placeholder="Es. MarioR" value={profName} onChange={e => setProfName(e.target.value)} />
             <div style={{ color: c.muted, fontSize: 11, marginTop: 5 }}>Questo nome appare sulle ricette. Aggiornandolo, verranno aggiornate anche tutte le tue ricette.</div>
           </div>
         </div>
-
         <div style={{ ...A.box, padding: '22px 24px', marginBottom: 24 }}>
           <div style={A.sec}>Cambia password</div>
           <div style={A.fld}><label style={A.lbl}>Nuova password</label>
@@ -846,7 +936,6 @@ export default function ChefBook() {
           </div>
           <div style={{ color: c.muted, fontSize: 12 }}>Lascia vuoto se non vuoi cambiare la password.</div>
         </div>
-
         <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '14px', fontSize: 15, opacity: profLoading ? 0.6 : 1 }} onClick={saveProfile} disabled={profLoading}>
           {profLoading ? '⏳ Salvataggio...' : '✓ Salva modifiche'}
         </button>
@@ -866,7 +955,6 @@ export default function ChefBook() {
           <MBtn />
         </div>
         <div style={{ maxWidth: 820, margin: '0 auto', padding: '22px 16px 70px' }}>
-          {/* Tabs */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
             {(['users', 'requests'] as const).map(t => (
               <button key={t} onClick={() => setAdminTab(t)} style={{ flex: 1, padding: '12px', background: adminTab === t ? c.accent : c.card, color: adminTab === t ? '#FFF8F0' : c.muted, border: 'none', fontFamily: "'Nunito',sans-serif", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
@@ -874,10 +962,7 @@ export default function ChefBook() {
               </button>
             ))}
           </div>
-
           {adminLoading && <div style={{ textAlign: 'center', color: c.muted, padding: 40 }}><span className="spin">⟳</span> Caricamento...</div>}
-
-          {/* TAB UTENTI */}
           {adminTab === 'users' && !adminLoading && (
             <div style={{ ...A.box, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -914,8 +999,6 @@ export default function ChefBook() {
               </table>
             </div>
           )}
-
-          {/* TAB RICHIESTE */}
           {adminTab === 'requests' && !adminLoading && (
             <div>
               {requests.length === 0 ? (
@@ -934,39 +1017,27 @@ export default function ChefBook() {
                     <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, alignItems: 'flex-end' }}>
                       {req.status === 'pending' ? (
                         <>
-                            <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }}
-                              onClick={async () => {
-                                const token = session?.access_token;  // ← leggi direttamente da session, non da tok()
-                                if (!token) { alert('Sessione scaduta, rieffettua il login'); return; }
-                                if (!window.confirm(`Creare account per ${req.display_name} (${req.email})?`)) return;
-                                try {
-                                  const res = await fetch(`${SUPABASE_URL}/functions/v1/approve-request`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': `Bearer ${token}`,
-                                      'apikey': SUPABASE_ANON_KEY,
-                                    },
-                                    body: JSON.stringify({
-                                      request_id: req.id,
-                                      email: req.email,
-                                      display_name: req.display_name,
-                                    }),
-                                  });
-                                  const j = await res.json();
-                                  if (!res.ok) { alert(`Errore: ${j.error}`); return; }
-                                  setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
-                                  // dopo setRequests nei bottoni Approva e Rifiuta
-                                  setPendingCount(prev => Math.max(0, prev - 1));
-                                  alert(`✅ Account creato per ${req.display_name}!`);
-                                } catch {
-                                  alert('Errore di connessione. Riprova.');
-                                }
-                              }}>✓ Approva</button>
+                          <button className="hbtn" style={{ ...A.btn, fontSize: 12, padding: '6px 12px' }}
+                            onClick={async () => {
+                              const token = session?.access_token;
+                              if (!token) { alert('Sessione scaduta, rieffettua il login'); return; }
+                              if (!window.confirm(`Creare account per ${req.display_name} (${req.email})?`)) return;
+                              try {
+                                const res = await fetch(`${SUPABASE_URL}/functions/v1/approve-request`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
+                                  body: JSON.stringify({ request_id: req.id, email: req.email, display_name: req.display_name }),
+                                });
+                                const j = await res.json();
+                                if (!res.ok) { alert(`Errore: ${j.error}`); return; }
+                                setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
+                                setPendingCount(prev => Math.max(0, prev - 1));
+                                alert(`✅ Account creato per ${req.display_name}!`);
+                              } catch { alert('Errore di connessione. Riprova.'); }
+                            }}>✓ Approva</button>
                           <button className="hbtn" style={{ ...A.btnR, fontSize: 12, padding: '6px 12px' }} onClick={async () => {
                             await db.requests.setStatus(req.id, 'rejected', tok()!);
                             setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' } : r));
-                            // dopo setRequests nei bottoni Approva e Rifiuta
                             setPendingCount(prev => Math.max(0, prev - 1));
                           }}>✗ Rifiuta</button>
                         </>
@@ -979,7 +1050,7 @@ export default function ChefBook() {
                   </div>
                 </div>
               ))}
-              {pending.length > 0 && <div style={{ fontSize: 12, color: c.muted, marginTop: 8, textAlign: 'center' }}>Clicca "Approva" per inviare automaticamente una bozza di email all'utente. Ricorda di creare l'account su Supabase Dashboard → Authentication → Users → Add user.</div>}
+              {pending.length > 0 && <div style={{ fontSize: 12, color: c.muted, marginTop: 8, textAlign: 'center' }}>Clicca "Approva" per creare l'account automaticamente e inviare l'email.</div>}
             </div>
           )}
         </div>
@@ -1019,59 +1090,24 @@ export default function ChefBook() {
               <textarea style={{ ...A.inp, minHeight: 90, lineHeight: 1.7 }} placeholder="Presentati brevemente, perché vorresti contribuire..." value={reqMsg} onChange={e => setReqMsg(e.target.value)} />
             </div>
             <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15 }}
-  onClick={async () => {
-    if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
-    setError('');
-
-    // Controlla se email già registrata in app_users
-    const emailCheck = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_users?email=eq.${encodeURIComponent(reqEmail.trim())}&select=id`,
-      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
-    );
-    const emailRows = await emailCheck.json();
-    if (Array.isArray(emailRows) && emailRows.length > 0) {
-      setError('Questa email è già registrata.');
-      return;
-    }
-
-    // Controlla se display_name già in uso in app_users
-    const nameCheck = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_users?display_name=eq.${encodeURIComponent(reqName.trim())}&select=id`,
-      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
-    );
-    const nameRows = await nameCheck.json();
-    if (Array.isArray(nameRows) && nameRows.length > 0) {
-      setError('Questo nome è già in uso. Scegline un altro.');
-      return;
-    }
-
-    // Controlla se c'è già una richiesta pending con la stessa email
-    const reqCheck = await fetch(
-      `${SUPABASE_URL}/rest/v1/account_requests?email=eq.${encodeURIComponent(reqEmail.trim())}&status=eq.pending&select=id`,
-      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
-    );
-    const reqRows = await reqCheck.json();
-    if (Array.isArray(reqRows) && reqRows.length > 0) {
-      setError('Hai già una richiesta in attesa con questa email.');
-      return;
-    }
-
-    try {
-      const res = await db.requests.insert({
-        email: reqEmail.trim(),
-        display_name: reqName.trim(),
-        message: reqMsg.trim()
-      });
-      if (!res.ok) {
-        const j = await res.json();
-        setError(`Errore: ${j.message || j.msg || res.status}`);
-        return;
-      }
-      setReqSent(true);
-    } catch {
-      setError('Errore di connessione. Riprova.');
-    }
-  }}>Invia richiesta →</button>
+              onClick={async () => {
+                if (!reqEmail.trim() || !reqName.trim()) { setError('Email e nome sono obbligatori'); return; }
+                setError('');
+                const emailCheck = await fetch(`${SUPABASE_URL}/rest/v1/app_users?email=eq.${encodeURIComponent(reqEmail.trim())}&select=id`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } });
+                const emailRows = await emailCheck.json();
+                if (Array.isArray(emailRows) && emailRows.length > 0) { setError('Questa email è già registrata.'); return; }
+                const nameCheck = await fetch(`${SUPABASE_URL}/rest/v1/app_users?display_name=eq.${encodeURIComponent(reqName.trim())}&select=id`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } });
+                const nameRows = await nameCheck.json();
+                if (Array.isArray(nameRows) && nameRows.length > 0) { setError('Questo nome è già in uso. Scegline un altro.'); return; }
+                const reqCheck = await fetch(`${SUPABASE_URL}/rest/v1/account_requests?email=eq.${encodeURIComponent(reqEmail.trim())}&status=eq.pending&select=id`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } });
+                const reqRows = await reqCheck.json();
+                if (Array.isArray(reqRows) && reqRows.length > 0) { setError('Hai già una richiesta in attesa con questa email.'); return; }
+                try {
+                  const res = await db.requests.insert({ email: reqEmail.trim(), display_name: reqName.trim(), message: reqMsg.trim() });
+                  if (!res.ok) { const j = await res.json(); setError(`Errore: ${j.message || j.msg || res.status}`); return; }
+                  setReqSent(true);
+                } catch { setError('Errore di connessione. Riprova.'); }
+              }}>Invia richiesta →</button>
           </div>
         )}
       </div>
