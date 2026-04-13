@@ -604,11 +604,11 @@ export default function ChefBook() {
         <div style={{ color: c.muted, marginBottom: 28, fontSize: 14, lineHeight: 1.7 }}>Il ricettario collaborativo<br />della tua cucina</div>
         {error && <div style={A.err}>{error}</div>}
         <div style={{ ...A.fld, textAlign: 'left' }}><label style={A.lbl}>Email</label>
-          <input style={A.inp} type="email" placeholder="Es. marco@cucina.it" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} autoFocus />
+          <input style={A.inp} type="email" autoComplete="email" placeholder="Es. marco@cucina.it" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} autoFocus />
         </div>
         <div style={{ ...A.fld, textAlign: 'left' }}><label style={A.lbl}>Password</label>
           <div style={{ position: 'relative' }}>
-            <input style={{ ...A.inp, paddingRight: 44 }} type={showPw ? 'text' : 'password'} placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+            <input style={{ ...A.inp, paddingRight: 44 }} type={showPw ? 'text' : 'password'} autoComplete="current-password" placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
             <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: c.muted }} tabIndex={-1}>{showPw ? '🙈' : '👁️'}</button>
           </div>
         </div>
