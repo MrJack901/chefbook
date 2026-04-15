@@ -322,7 +322,13 @@ export default function ChefBook() {
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftIdRef = useRef<string | null>(null);
   // Login
-  const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false); const [loginLoading, setLoginLoading] = useState(false);
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem('cb-last-email') || '';
+    } catch {
+      return '';
+    }
+  }); const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false); const [loginLoading, setLoginLoading] = useState(false);
   // Profile
   const [profName, setProfName] = useState(''); const [profNewPw, setProfNewPw] = useState(''); const [profConfPw, setProfConfPw] = useState(''); const [profMsg, setProfMsg] = useState(''); const [profLoading, setProfLoading] = useState(false);
   // Admin
@@ -479,6 +485,13 @@ useEffect(() => {
       } catch (e) {
         console.log('ℹ Portachiavi non disponibile o disabilitato:', e);
       }
+    }
+
+    // ── Fallback: salva l'email nel localStorage per suggerimenti ──
+    try {
+      localStorage.setItem('cb-last-email', email.trim());
+    } catch (e) {
+      console.log('ℹ localStorage non disponibile');
     }
     // ─────────────────────────────────────────────────────
 
@@ -734,7 +747,7 @@ const filtered = recipes
               style={A.inp}
               type="email"
               name="email"
-              autoComplete="email"
+              autoComplete="username email"
               placeholder="Es. marco@cucina.it"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -771,7 +784,30 @@ const filtered = recipes
         </div>
         <button className="hbtn" style={{ ...A.btnO, width: '100%', padding: '12px', fontSize: 14 }} onClick={handleGuest}>Entra come ospite 👁️</button>
         <div style={{ color: c.muted, fontSize: 11, marginTop: 16, lineHeight: 1.7 }}>Gli ospiti possono consultare le ricette ma non modificarle.</div>
-        <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>💡 Il browser salverà automaticamente email e password dopo il primo accesso</div>
+        <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>
+          💡 L'email viene ricordata automaticamente
+          {email && (
+            <button
+              onClick={() => {
+                try {
+                  localStorage.removeItem('cb-last-email');
+                  setEmail('');
+                } catch {}
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: c.muted,
+                fontSize: 10,
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                marginLeft: 8
+              }}
+            >
+              (dimentica)
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
