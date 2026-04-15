@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { CSSProperties, KeyboardEvent, ChangeEvent } from "react";
+import type { CSSProperties, KeyboardEvent, ChangeEvent, FormEvent } from "react";
 
 // ─── CREDENTIAL MANAGEMENT API ────────────────────────────────────
 declare global {
@@ -447,11 +447,18 @@ useEffect(() => {
     setDraftSaving(false);
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     if (!email.trim() || !pw.trim()) return;
-    setLoginLoading(true); setError('');
+
+    setLoginLoading(true);
+    setError('');
     const { session: s, error: err } = await authApi.signIn(email.trim(), pw);
-    if (err || !s) { setError(err || 'Errore'); setLoginLoading(false); return; }
+    if (err || !s) {
+      setError(err || 'Errore');
+      setLoginLoading(false);
+      return;
+    }
 
     // ── Salva le credenziali nel portachiavi del browser ──
     if ('PasswordCredential' in window && navigator.credentials) {
@@ -476,12 +483,31 @@ useEffect(() => {
 
     const info = await db.users.getOne(s.user.id, s.access_token);
     localStorage.setItem('cb-session', JSON.stringify(s));
-    setSession(s); setIsGuest(false); setIsAdminUser(info?.is_admin || false);
+    setSession(s);
+    setIsGuest(false);
+    setIsAdminUser(info?.is_admin || false);
     if (info?.is_admin) {
       const reqs = await db.requests.list(s.access_token);
       if (Array.isArray(reqs)) setPendingCount(reqs.filter(r => r.status === 'pending').length);
     }
-    await loadRecipes(s.access_token); setLoginLoading(false); setView('home');
+    await loadRecipes(s.access_token);
+    setLoginLoading(false);
+    setView('home');
+
+    // Dopo login riuscito, triggera un submit "fittizio" per aiutare l'autofill
+    setTimeout(() => {
+      const fakeForm = document.createElement('form');
+      fakeForm.style.display = 'none';
+      fakeForm.method = 'POST';
+      fakeForm.action = window.location.href;
+      fakeForm.innerHTML = `
+        <input type="email" name="email" value="${email.trim().replace(/"/g, '&quot;')}" autocomplete="email">
+        <input type="password" name="password" value="${pw.replace(/"/g, '&quot;')}" autocomplete="current-password">
+      `;
+      document.body.appendChild(fakeForm);
+      // Non facciamo submit, ma il browser potrebbe riconoscere i campi per l'autofill
+      document.body.removeChild(fakeForm);
+    }, 500);
   };
 
   const handleGuest = async () => { setIsGuest(true); setSession(null); localStorage.removeItem('cb-session'); await loadRecipes(); setView('home'); };
@@ -697,7 +723,7 @@ const filtered = recipes
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 40, fontWeight: 700, color: c.accent, marginBottom: 6 }}>Chef's Book</div>
         <div style={{ color: c.muted, marginBottom: 28, fontSize: 14, lineHeight: 1.7 }}>Il ricettario collaborativo<br />della tua cucina</div>
         {error && <div style={A.err}>{error}</div>}
-        <form onSubmit={e => { e.preventDefault(); handleLogin(); }} autoComplete="on" name="login">
+        <form onSubmit={handleLogin} autoComplete="on" name="login">
           <div style={{ ...A.fld, textAlign: 'left' }}>
             <label style={A.lbl}>Email</label>
             <input
@@ -709,6 +735,7 @@ const filtered = recipes
               value={email}
               onChange={e => setEmail(e.target.value)}
               autoFocus
+              required
             />
           </div>
           <div style={{ ...A.fld, textAlign: 'left' }}>
@@ -722,6 +749,7 @@ const filtered = recipes
                 placeholder="••••••••"
                 value={pw}
                 onChange={e => setPw(e.target.value)}
+                required
               />
               <button type="button" onClick={() => setShowPw(v => !v)}
                 style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: c.muted }}
@@ -739,7 +767,7 @@ const filtered = recipes
         </div>
         <button className="hbtn" style={{ ...A.btnO, width: '100%', padding: '12px', fontSize: 14 }} onClick={handleGuest}>Entra come ospite 👁️</button>
         <div style={{ color: c.muted, fontSize: 11, marginTop: 16, lineHeight: 1.7 }}>Gli ospiti possono consultare le ricette ma non modificarle.</div>
-        <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>💡 Il browser chiederà di salvare email e password dopo l'accesso</div>
+        <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>💡 Il browser salverà automaticamente email e password dopo il primo accesso</div>
       </div>
     </div>
   );
