@@ -298,6 +298,7 @@ export default function ChefBook() {
   const [pendingCount, setPendingCount] = useState(0);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [filter, setFilter] = useState('tutti');
+  const [sortBy, setSortBy] = useState<'date' | 'title' | 'author'>('date');
   const [current, setCurrent] = useState<Recipe | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm(''));
   const [steps, setSteps] = useState<string[]>(['']);
