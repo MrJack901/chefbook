@@ -1,13 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent, ChangeEvent } from "react";
 
-// ─── CREDENTIAL MANAGEMENT API ────────────────────────────────────
-declare global {
-  interface Window {
-    PasswordCredential?: new (data: { id: string; password: string; name?: string }) => Credential;
-  }
-}
-
 // ─── CONFIGURAZIONE SUPABASE ───────────────────────────────────────
 const SUPABASE_URL = 'https://eotxguvsrgbrgdaxhfwz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdHhndXZzcmdicmdkYXhoZnd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjY3ODMsImV4cCI6MjA4ODgwMjc4M30.GthcPCt_JyxFpK0AWGVnEr2cqjjLx7bnKcvm-FtKuU4';
@@ -453,25 +446,19 @@ useEffect(() => {
     const { session: s, error: err } = await authApi.signIn(email.trim(), pw);
     if (err || !s) { setError(err || 'Errore'); setLoginLoading(false); return; }
 
-    // ── Salva le credenziali nel portachiavi del browser/iOS ──
-    if ('PasswordCredential' in window && navigator.credentials) {
-      try {
-        const credData: any = {
-          id: email.trim(),
-          password: pw,
-          name: s.user.user_metadata?.display_name || email.trim(),
-        };
-        // Su Android aggiungere iconURL può aiutare a mostrare il dialogo
-        if (typeof window !== 'undefined' && window.location) {
-          credData.iconURL = window.location.origin + '/favicon.ico';
-        }
-        const cred = new (window as any).PasswordCredential(credData);
-        await navigator.credentials.store(cred);
-        console.log('✓ Credenziali salvate nel portachiavi');
-      } catch (e) {
-        console.log('ℹ Portachiavi non disponibile o disabilitato:', e);
-      }
-    }
+    // ── Trigger salvataggio credenziali dopo login riuscito ──
+    setTimeout(() => {
+      // Crea un form nascosto per triggerare il salvataggio automatico
+      const hiddenForm = document.createElement('form');
+      hiddenForm.style.display = 'none';
+      hiddenForm.innerHTML = `
+        <input type="email" name="email" value="${email.trim().replace(/"/g, '&quot;')}" autocomplete="email">
+        <input type="password" name="password" value="${pw.replace(/"/g, '&quot;')}" autocomplete="current-password">
+      `;
+      document.body.appendChild(hiddenForm);
+      hiddenForm.submit();
+      document.body.removeChild(hiddenForm);
+    }, 100);
     // ─────────────────────────────────────────────────────────
 
     const info = await db.users.getOne(s.user.id, s.access_token);
@@ -739,6 +726,7 @@ const filtered = recipes
         </div>
         <button className="hbtn" style={{ ...A.btnO, width: '100%', padding: '12px', fontSize: 14 }} onClick={handleGuest}>Entra come ospite 👁️</button>
         <div style={{ color: c.muted, fontSize: 11, marginTop: 16, lineHeight: 1.7 }}>Gli ospiti possono consultare le ricette ma non modificarle.</div>
+        <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>💡 Il browser chiederà di salvare email e password dopo l'accesso</div>
       </div>
     </div>
   );
