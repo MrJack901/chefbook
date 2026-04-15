@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // ─── TIPI ──────────────────────────────────────────────────────────
 interface User { id: string; email: string; user_metadata?: { display_name?: string } }
-interface Session { access_token: string; user: User }
+interface Session { access_token: string; refresh_token: string; user: User }
 interface Recipe {
   id: string; created_at?: string; title: string; creation_time: string;
   date: string | null; type: string; weight: string; servings: number;
@@ -83,6 +83,7 @@ const authApi = {
     const j = await r.json();
     return r.ok ? { session: j as Session, error: null } : { session: null, error: j.error_description || 'Credenziali non valide' };
   },
+  
   signOut: async (token: string) => fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` } }),
   getUser: async (token: string) => { const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` } }); return r.ok ? r.json() : null; },
   updateProfile: async (token: string, data: { display_name?: string; password?: string }) => {
@@ -92,8 +93,23 @@ const authApi = {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { method: 'PUT', headers: makeHdr(token), body: JSON.stringify(body) });
     if (!r.ok) { const j = await r.json(); throw new Error(j.msg || 'Errore aggiornamento'); }
     return r.json() as Promise<User>;
+  },
+  
+  refresh: async (refresh_token: string) => {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token })
+    });
+    const j = await r.json();
+    return r.ok
+      ? { session: j as Session, error: null }
+      : { session: null, error: 'Sessione scaduta' };
   }
+  
 };
+
+
 
 const db = {
   recipes: {
@@ -319,27 +335,67 @@ export default function ChefBook() {
     setSyncing(false);
   };
 
-  useEffect(() => {
-    (async () => {
-      const stored = localStorage.getItem('cb-session');
-      if (stored) {
-        try {
-          const s = JSON.parse(stored) as Session;
-          const u = await authApi.getUser(s.access_token);
-          if (u) {
-            const info = await db.users.getOne(s.user.id, s.access_token);
-            setSession(s); setIsAdminUser(info?.is_admin || false);
-            if (info?.is_admin) {
-              const reqs = await db.requests.list(s.access_token);
-              if (Array.isArray(reqs)) setPendingCount(reqs.filter(r => r.status === 'pending').length);
+useEffect(() => {
+  (async () => {
+    const stored = localStorage.getItem('cb-session');
+    if (stored) {
+      try {
+        const s = JSON.parse(stored) as Session;
+        // Prova prima con il token corrente
+        let currentSession = s;
+        const u = await authApi.getUser(s.access_token);
+        if (!u) {
+          // Token scaduto — prova a refreshare
+          if (s.refresh_token) {
+            const { session: refreshed, error } = await authApi.refresh(s.refresh_token);
+            if (refreshed) {
+              localStorage.setItem('cb-session', JSON.stringify(refreshed));
+              currentSession = refreshed;
+            } else {
+              // Refresh fallito — vai al login
+              localStorage.removeItem('cb-session');
+              setView('login');
+              return;
             }
-            await loadRecipes(s.access_token); setView('home'); return;
+          } else {
+            localStorage.removeItem('cb-session');
+            setView('login');
+            return;
           }
-        } catch {} localStorage.removeItem('cb-session');
+        }
+        const info = await db.users.getOne(currentSession.user.id, currentSession.access_token);
+        setSession(currentSession);
+        setIsAdminUser(info?.is_admin || false);
+        if (info?.is_admin) {
+          const reqs = await db.requests.list(currentSession.access_token);
+          if (Array.isArray(reqs)) setPendingCount(reqs.filter(r => r.status === 'pending').length);
+        }
+        await loadRecipes(currentSession.access_token);
+        setView('home');
+        
+        // Dentro useEffect, dopo setView('home'):
+            const refreshInterval = setInterval(async () => {
+              const stored = localStorage.getItem('cb-session');
+              if (!stored) return;
+              const s = JSON.parse(stored) as Session;
+              if (s.refresh_token) {
+                const { session: refreshed } = await authApi.refresh(s.refresh_token);
+                if (refreshed) {
+                  localStorage.setItem('cb-session', JSON.stringify(refreshed));
+                  setSession(refreshed);
+                }
+              }
+            }, 50 * 60 * 1000); // ogni 50 minuti
+            return () => clearInterval(refreshInterval);
+
+        return;
+      } catch {
+        localStorage.removeItem('cb-session');
       }
-      setView('login');
-    })();
-  }, []);
+    }
+    setView('login');
+  })();
+}, []);
 
   // Auto-save bozza mentre si compila il form
   useEffect(() => {
@@ -603,18 +659,42 @@ export default function ChefBook() {
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 40, fontWeight: 700, color: c.accent, marginBottom: 6 }}>Chef's Book</div>
         <div style={{ color: c.muted, marginBottom: 28, fontSize: 14, lineHeight: 1.7 }}>Il ricettario collaborativo<br />della tua cucina</div>
         {error && <div style={A.err}>{error}</div>}
-        <div style={{ ...A.fld, textAlign: 'left' }}><label style={A.lbl}>Email</label>
-          <input style={A.inp} type="email" autoComplete="email" placeholder="Es. marco@cucina.it" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} autoFocus />
-        </div>
-        <div style={{ ...A.fld, textAlign: 'left' }}><label style={A.lbl}>Password</label>
-          <div style={{ position: 'relative' }}>
-            <input style={{ ...A.inp, paddingRight: 44 }} type={showPw ? 'text' : 'password'} autoComplete="current-password" placeholder="••••••••" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
-            <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: c.muted }} tabIndex={-1}>{showPw ? '🙈' : '👁️'}</button>
+        <form onSubmit={e => { e.preventDefault(); handleLogin(); }} autoComplete="on" name="login">
+          <div style={{ ...A.fld, textAlign: 'left' }}>
+            <label style={A.lbl}>Email</label>
+            <input
+              style={A.inp}
+              type="email"
+              name="email"
+              autoComplete="email"
+              placeholder="Es. marco@cucina.it"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
           </div>
-        </div>
-        <button className="hbtn" style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15, opacity: loginLoading ? 0.6 : 1 }} onClick={handleLogin} disabled={loginLoading}>
-          {loginLoading ? <span><span className="spin">⟳</span> Accesso...</span> : 'Accedi →'}
-        </button>
+          <div style={{ ...A.fld, textAlign: 'left' }}>
+            <label style={A.lbl}>Password</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                style={{ ...A.inp, paddingRight: 44 }}
+                type={showPw ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
+                placeholder="••••••••"
+                value={pw}
+                onChange={e => setPw(e.target.value)}
+              />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: c.muted }}
+                tabIndex={-1}>{showPw ? '🙈' : '👁️'}</button>
+            </div>
+          </div>
+          <button type="submit" className="hbtn"
+            style={{ ...A.btn, width: '100%', padding: '13px', fontSize: 15, opacity: loginLoading ? 0.6 : 1 }}
+            disabled={loginLoading}>
+            {loginLoading ? <span><span className="spin">⟳</span> Accesso...</span> : 'Accedi →'}
+          </button>
+        </form>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
           <div style={{ flex: 1, height: 1, background: c.border }} /><span style={{ fontSize: 12, color: c.muted }}>oppure</span><div style={{ flex: 1, height: 1, background: c.border }} />
         </div>
