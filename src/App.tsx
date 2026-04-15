@@ -461,6 +461,7 @@ useEffect(() => {
     }
 
     // ── Salva le credenziali nel portachiavi del browser ──
+    // Nota: Safari iOS usa l'autofill nativo invece della Credential Management API
     if ('PasswordCredential' in window && navigator.credentials) {
       try {
         const credData: any = {
@@ -476,7 +477,7 @@ useEffect(() => {
         await navigator.credentials.store(cred);
         console.log('✓ Credenziali salvate nel portachiavi');
       } catch (e) {
-        console.log('ℹ Portachiavi non disponibile:', e);
+        console.log('ℹ Portachiavi non disponibile o disabilitato:', e);
       }
     }
     // ─────────────────────────────────────────────────────
@@ -696,6 +697,9 @@ const filtered = recipes
       .dacts{flex-wrap:wrap;gap:6px!important}.dacts button{padding:7px 10px!important;font-size:12px!important}
       .mstrip{flex-direction:column!important}.mstrip>div{border-right:none!important;border-bottom:1px solid #E2D9CC}.mstrip>div:last-child{border-bottom:none!important}
       .swrow{flex-wrap:wrap;gap:10px!important}
+      /* Prevenzione zoom su iOS */
+      input,textarea,select{font-size:16px!important}
+      .hbtn{font-size:16px!important}
     }
     @media(max-width:400px){.rgrid{grid-template-columns:1fr!important}}
   `;
