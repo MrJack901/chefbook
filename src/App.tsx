@@ -456,13 +456,21 @@ useEffect(() => {
     // ── Salva le credenziali nel portachiavi del browser/iOS ──
     if ('PasswordCredential' in window && navigator.credentials) {
       try {
-        const cred = new (window as any).PasswordCredential({
+        const credData: any = {
           id: email.trim(),
           password: pw,
           name: s.user.user_metadata?.display_name || email.trim(),
-        });
+        };
+        // Su Android aggiungere iconURL può aiutare a mostrare il dialogo
+        if (typeof window !== 'undefined' && window.location) {
+          credData.iconURL = window.location.origin + '/favicon.ico';
+        }
+        const cred = new (window as any).PasswordCredential(credData);
         await navigator.credentials.store(cred);
-      } catch {}
+        console.log('✓ Credenziali salvate nel portachiavi');
+      } catch (e) {
+        console.log('ℹ Portachiavi non disponibile o disabilitato:', e);
+      }
     }
     // ─────────────────────────────────────────────────────────
 
