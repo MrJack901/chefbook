@@ -27,6 +27,8 @@ interface AccountRequest { id: string; email: string; display_name: string; mess
 interface MetaItem { icon: string; label: string; value: string; accent?: boolean }
 
 // ─── HELPERS ──────────────────────────────────────────────────────
+const [sortBy, setSortBy] = useState<'date' | 'title' | 'author'>('date');
+
 const dispName = (sess: Session) => sess.user.user_metadata?.display_name || sess.user.email.split('@')[0];
 
 const makeHdr = (token?: string): Record<string, string> => ({
@@ -579,15 +581,23 @@ useEffect(() => {
   const sf = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(p => ({ ...p, [k]: v }));
 
   // Filtra le ricette in base al tab selezionato
-  const filtered = recipes
-    .filter(r => {
-      if (filter === '__bozze__') return r.is_draft && (isAdminUser || r.author === userName);
-      if (filter === '__nascoste__') return r.is_hidden && !r.is_draft && isAdminUser;
-      if (filter === 'tutti') return !r.is_draft && (!r.is_hidden || isAdminUser);
-      return r.type === filter && !r.is_draft && (!r.is_hidden || isAdminUser);
-    })
-    .filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase()) || (r.author || '').toLowerCase().includes(search.toLowerCase()));
-
+const filtered = recipes
+  .filter(r => {
+    if (filter === '__bozze__') return r.is_draft && (isAdminUser || r.author === userName);
+    if (filter === '__nascoste__') return r.is_hidden && !r.is_draft && isAdminUser;
+    if (filter === 'tutti') return !r.is_draft && (!r.is_hidden || isAdminUser);
+    return r.type === filter && !r.is_draft && (!r.is_hidden || isAdminUser);
+  })
+  .filter(r => !search ||
+    r.title.toLowerCase().includes(search.toLowerCase()) ||
+    (r.author || '').toLowerCase().includes(search.toLowerCase())
+  )
+  .sort((a, b) => {
+    if (sortBy === 'title') return a.title.localeCompare(b.title, 'it');
+    if (sortBy === 'author') return (a.author || '').localeCompare(b.author || '', 'it');
+    return (b.created_at || '').localeCompare(a.created_at || ''); // date desc
+  });
+  
   // Tabs da mostrare
   const tabList = [
     'tutti',
@@ -732,25 +742,56 @@ useEffect(() => {
       </div>}
 
       {/* Tabs tipologie + bozze + nascoste */}
-      <div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', overflowX: 'auto' }}>
-        {tabList.map(t => {
-          const isSpecial = t === '__bozze__' || t === '__nascoste__';
-          const label = t === 'tutti' ? '📚 Tutte' : t === '__bozze__' ? '📝 Bozze' : t === '__nascoste__' ? '👁️ Nascoste' : t;
-          const activeColor = t === '__bozze__' ? '#8A5A00' : t === '__nascoste__' ? c.muted : c.accent;
-          const activeBorder = t === '__bozze__' ? '#C4862A' : t === '__nascoste__' ? c.muted : c.accent;
-          return (
-            <button key={t} onClick={() => setFilter(t)} style={{
-              background: 'transparent', color: filter === t ? activeColor : c.muted, border: 'none',
-              borderBottom: filter === t ? `2.5px solid ${activeBorder}` : '2.5px solid transparent',
-              padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer',
-              fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500,
-              textTransform: isSpecial ? 'none' : 'capitalize', whiteSpace: 'nowrap'
-            }}>{label}</button>
-          );
-        })}
-      </div>
+<div style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: '0 14px', display: 'flex', overflowX: 'auto' }}>
+  {tabList.map(t => {
+    const isSpecial = t === '__bozze__' || t === '__nascoste__';
+    const label = t === 'tutti' ? '📚 Tutte' : t === '__bozze__' ? '📝 Bozze' : t === '__nascoste__' ? '👁️ Nascoste' : t;
+    const activeColor = t === '__bozze__' ? '#8A5A00' : t === '__nascoste__' ? c.muted : c.accent;
+    const activeBorder = t === '__bozze__' ? '#C4862A' : t === '__nascoste__' ? c.muted : c.accent;
+    // Conta le ricette per questo tab
+    const count = t === 'tutti'
+      ? recipes.filter(r => !r.is_draft && (!r.is_hidden || isAdminUser)).length
+      : t === '__bozze__'
+      ? recipes.filter(r => r.is_draft && (isAdminUser || r.author === userName)).length
+      : t === '__nascoste__'
+      ? recipes.filter(r => r.is_hidden && !r.is_draft && isAdminUser).length
+      : recipes.filter(r => r.type === t && !r.is_draft && (!r.is_hidden || isAdminUser)).length;
+    return (
+      <button key={t} onClick={() => setFilter(t)} style={{
+        background: 'transparent',
+        color: filter === t ? activeColor : c.muted,
+        border: 'none',
+        borderBottom: filter === t ? `2.5px solid ${activeBorder}` : '2.5px solid transparent',
+        padding: '13px 14px 11px', fontSize: 13, cursor: 'pointer',
+        fontFamily: "'Nunito',sans-serif", fontWeight: filter === t ? 700 : 500,
+        textTransform: isSpecial ? 'none' : 'capitalize', whiteSpace: 'nowrap'
+      }}>
+        {label}
+        <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 600, opacity: 0.7 }}>({count})</span>
+      </button>
+    );
+  })}
+</div>
 
-      <div style={{ padding: '10px 16px 4px', color: c.muted, fontSize: 12, fontWeight: 600 }}>{filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter === '__bozze__' ? 'bozze' : filter === '__nascoste__' ? 'nascoste' : filter}` : ''}</div>
+      <div style={{ padding: '8px 16px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ color: c.muted, fontSize: 12, fontWeight: 600 }}>
+          {filtered.length} ricett{filtered.length === 1 ? 'a' : 'e'}{filter !== 'tutti' ? ` · ${filter === '__bozze__' ? 'bozze' : filter === '__nascoste__' ? 'nascoste' : filter}` : ''}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: c.muted, fontWeight: 600 }}>Ordina:</span>
+          {(['date', 'title', 'author'] as const).map(s => (
+            <button key={s} onClick={() => setSortBy(s)} style={{
+              background: sortBy === s ? c.accentLight : 'transparent',
+              color: sortBy === s ? c.accent : c.muted,
+              border: `1px solid ${sortBy === s ? c.accent : c.border}`,
+              borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
+              fontFamily: "'Nunito',sans-serif", fontWeight: sortBy === s ? 700 : 500
+            }}>
+              {s === 'date' ? '📅 Data' : s === 'title' ? '🔤 Nome' : '👤 Autore'}
+            </button>
+          ))}
+        </div>
+      </div>
       {error && <div style={{ ...A.err, margin: '4px 16px 8px' }}>{error}</div>}
       {filtered.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '70px 24px', gap: 14, textAlign: 'center' }}>
