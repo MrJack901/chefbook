@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent, ChangeEvent } from "react";
 
+// ─── CREDENTIAL MANAGEMENT API ────────────────────────────────────
+declare global {
+  interface Window {
+    PasswordCredential?: new (data: { id: string; password: string; name?: string; iconURL?: string }) => Credential;
+  }
+}
+
 // ─── CONFIGURAZIONE SUPABASE ───────────────────────────────────────
 const SUPABASE_URL = 'https://eotxguvsrgbrgdaxhfwz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdHhndXZzcmdicmdkYXhoZnd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjY3ODMsImV4cCI6MjA4ODgwMjc4M30.GthcPCt_JyxFpK0AWGVnEr2cqjjLx7bnKcvm-FtKuU4';
@@ -446,20 +453,26 @@ useEffect(() => {
     const { session: s, error: err } = await authApi.signIn(email.trim(), pw);
     if (err || !s) { setError(err || 'Errore'); setLoginLoading(false); return; }
 
-    // ── Trigger salvataggio credenziali dopo login riuscito ──
-    setTimeout(() => {
-      // Crea un form nascosto per triggerare il salvataggio automatico
-      const hiddenForm = document.createElement('form');
-      hiddenForm.style.display = 'none';
-      hiddenForm.innerHTML = `
-        <input type="email" name="email" value="${email.trim().replace(/"/g, '&quot;')}" autocomplete="email">
-        <input type="password" name="password" value="${pw.replace(/"/g, '&quot;')}" autocomplete="current-password">
-      `;
-      document.body.appendChild(hiddenForm);
-      hiddenForm.submit();
-      document.body.removeChild(hiddenForm);
-    }, 100);
-    // ─────────────────────────────────────────────────────────
+    // ── Salva le credenziali nel portachiavi del browser ──
+    if ('PasswordCredential' in window && navigator.credentials) {
+      try {
+        const credData: any = {
+          id: email.trim(),
+          password: pw,
+          name: s.user.user_metadata?.display_name || email.trim(),
+        };
+        // Aggiungi iconURL per aiutare il riconoscimento su mobile
+        if (typeof window !== 'undefined' && window.location) {
+          credData.iconURL = window.location.origin + '/favicon.ico';
+        }
+        const cred = new (window as any).PasswordCredential(credData);
+        await navigator.credentials.store(cred);
+        console.log('✓ Credenziali salvate nel portachiavi');
+      } catch (e) {
+        console.log('ℹ Portachiavi non disponibile:', e);
+      }
+    }
+    // ─────────────────────────────────────────────────────
 
     const info = await db.users.getOne(s.user.id, s.access_token);
     localStorage.setItem('cb-session', JSON.stringify(s));
