@@ -375,22 +375,21 @@ useEffect(() => {
         await loadRecipes(currentSession.access_token);
         setView('home');
         
-        // Dentro useEffect, dopo setView('home'):
-            const refreshInterval = setInterval(async () => {
-              const stored = localStorage.getItem('cb-session');
-              if (!stored) return;
-              const s = JSON.parse(stored) as Session;
-              if (s.refresh_token) {
-                const { session: refreshed } = await authApi.refresh(s.refresh_token);
-                if (refreshed) {
-                  localStorage.setItem('cb-session', JSON.stringify(refreshed));
-                  setSession(refreshed);
-                }
-              }
-            }, 50 * 60 * 1000); // ogni 50 minuti
-            return () => clearInterval(refreshInterval);
-
-        return;
+        // Refresh automatico ogni 50 minuti
+        const refreshInterval = setInterval(async () => {
+          const stored = localStorage.getItem('cb-session');
+          if (!stored) return;
+          const s = JSON.parse(stored) as Session;
+          if (s.refresh_token) {
+            const { session: refreshed } = await authApi.refresh(s.refresh_token);
+            if (refreshed) {
+              localStorage.setItem('cb-session', JSON.stringify(refreshed));
+              setSession(refreshed);
+            }
+          }
+        }, 50 * 60 * 1000);
+        
+        return () => clearInterval(refreshInterval);
       } catch {
         localStorage.removeItem('cb-session');
       }
@@ -680,6 +679,7 @@ const filtered = recipes
               placeholder="Es. marco@cucina.it"
               value={email}
               onChange={e => setEmail(e.target.value)}
+              autoFocus
             />
           </div>
           <div style={{ ...A.fld, textAlign: 'left' }}>
