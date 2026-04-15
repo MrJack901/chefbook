@@ -343,6 +343,32 @@ export default function ChefBook() {
   const tok = () => session?.access_token;
   const userName = session ? dispName(session) : isGuest ? 'Ospite' : '';
 
+  // ── Navigazione basata su hash per aiutare l'autofill ──
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1); // rimuove #
+      if (hash && hash !== view) {
+        setView(hash);
+      }
+    };
+
+    const updateHash = () => {
+      if (window.location.hash.slice(1) !== view) {
+        window.history.replaceState(null, '', `#${view}`);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    updateHash(); // aggiorna hash iniziale
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [view]);
+
+  const navigateTo = (newView: string) => {
+    setView(newView);
+    window.history.replaceState(null, '', `#${newView}`);
+  };
+
   const loadRecipes = async (token?: string, quiet = false) => {
     if (!quiet) setSyncing(true);
     try { const r = await db.recipes.list(token); if (Array.isArray(r)) setRecipes(r); else setError('Errore connessione.'); }
@@ -369,7 +395,7 @@ useEffect(() => {
             } else {
               // Refresh fallito — vai al login
               localStorage.removeItem('cb-session');
-              setView('login');
+            setView('login');
               return;
             }
           } else {
@@ -506,7 +532,7 @@ useEffect(() => {
     }
     await loadRecipes(s.access_token);
     setLoginLoading(false);
-    setView('home');
+    navigateTo('home');
 
     // Dopo login riuscito, triggera un submit "fittizio" per aiutare l'autofill
     setTimeout(() => {
@@ -524,20 +550,20 @@ useEffect(() => {
     }, 500);
   };
 
-  const handleGuest = async () => { setIsGuest(true); setSession(null); localStorage.removeItem('cb-session'); await loadRecipes(); setView('home'); };
+  const handleGuest = async () => { setIsGuest(true); setSession(null); localStorage.removeItem('cb-session'); await loadRecipes(); navigateTo('home'); };
 
   const handleLogout = async () => {
     if (session) await authApi.signOut(session.access_token);
-    localStorage.removeItem('cb-session'); setSession(null); setIsGuest(false); setIsAdminUser(false); setRecipes([]); setMenuOpen(false); setView('login');
+    localStorage.removeItem('cb-session'); setSession(null); setIsGuest(false); setIsAdminUser(false); setRecipes([]); setMenuOpen(false); navigateTo('login');
   };
 
   const goAdmin = async () => {
     setAdminLoading(true);
     try { const [u, r] = await Promise.all([db.users.list(tok()!), db.requests.list(tok()!)]); setAppUsers(Array.isArray(u) ? u : []); setRequests(Array.isArray(r) ? r : []); }
-    catch {} setAdminLoading(false); setView('admin');
+    catch {} setAdminLoading(false); navigateTo('admin');
   };
 
-  const goProfile = () => { setProfName(userName); setProfNewPw(''); setProfConfPw(''); setProfMsg(''); setView('profile'); };
+  const goProfile = () => { setProfName(userName); setProfNewPw(''); setProfConfPw(''); setProfMsg(''); navigateTo('profile'); };
 
   const saveProfile = async () => {
     if (!session) return; setProfLoading(true); setProfMsg('');
@@ -563,7 +589,7 @@ useEffect(() => {
 
   const newRecipe = () => {
     draftIdRef.current = null;
-    setForm(emptyForm(userName)); setSteps(['']); setPhotoPreview(null); setCurrent(null); setView('form');
+    setForm(emptyForm(userName)); setSteps(['']); setPhotoPreview(null); setCurrent(null); navigateTo('form');
   };
 
   const editRecipe = (r: Recipe) => {
@@ -578,7 +604,7 @@ useEffect(() => {
     setSteps(dbToSteps(r.procedure)); setPhotoPreview(r.photo_url || null); setCurrent(null); setView('form');
   };
 
-  const openDetail = (r: Recipe) => { setCurrent(r); setCurServings(r.servings || 1); setCurWeight(r.weight || ''); setView('detail'); };
+  const openDetail = (r: Recipe) => { setCurrent(r); setCurServings(r.servings || 1); setCurWeight(r.weight || ''); navigateTo('detail'); };
   const canEdit = (r: Recipe) => !isGuest && session && (isAdminUser || r.author === userName);
 
   const handleCancelForm = async () => {
@@ -785,7 +811,7 @@ const filtered = recipes
         <button className="hbtn" style={{ ...A.btnO, width: '100%', padding: '12px', fontSize: 14 }} onClick={handleGuest}>Entra come ospite 👁️</button>
         <div style={{ color: c.muted, fontSize: 11, marginTop: 16, lineHeight: 1.7 }}>Gli ospiti possono consultare le ricette ma non modificarle.</div>
         <div style={{ color: c.muted, fontSize: 10, marginTop: 8, lineHeight: 1.5, textAlign: 'center' }}>
-          💡 L'email viene ricordata automaticamente
+          💡 L'email viene ricordata automaticamente • L'URL cambia per aiutare il browser
           {email && (
             <button
               onClick={() => {
@@ -816,7 +842,7 @@ const filtered = recipes
   if (view === 'home') return (
     <div style={A.wrap}>
       <style>{css}</style>
-      <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); setReqEmail(''); setReqName(''); setReqMsg(''); setView('request_form'); }} c={c} A={A} />
+      <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); setReqEmail(''); setReqName(''); setReqMsg(''); navigateTo('request_form'); }} c={c} A={A} />
       <div style={A.hdr}>
         <div style={A.logo}>👨‍🍳 Chef's Book</div>
         <div className="dsk" style={{ alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
@@ -836,7 +862,7 @@ const filtered = recipes
       </div>
       {isGuest && <div style={{ background: '#FFFBF0', borderBottom: `1px solid #EDD080`, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, color: c.accentMid }}>👁️ Modalità ospite — solo visualizzazione</span>
-        <button onClick={() => { setReqSent(false); setView('request_form'); }} style={{ ...A.btnO, fontSize: 11, padding: '4px 10px', borderColor: c.accentMid, color: c.accentMid }}>Richiedi accesso</button>
+        <button onClick={() => { setReqSent(false); navigateTo('request_form'); }} style={{ ...A.btnO, fontSize: 11, padding: '4px 10px', borderColor: c.accentMid, color: c.accentMid }}>Richiedi accesso</button>
       </div>}
 
       {/* Tabs tipologie + bozze + nascoste */}
@@ -937,7 +963,7 @@ const filtered = recipes
     return (
       <div style={A.wrap}>
         <style>{css}</style>
-        <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); setView('request_form'); }} c={c} A={A} />
+        <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); navigateTo('request_form'); }} c={c} A={A} />
         <div style={A.hdr}>
           <button className="hbtn" style={A.btnO} onClick={() => setView('home')}>← Ricette</button>
           <div className="dacts" style={{ display: 'flex', gap: 8 }}>
