@@ -344,29 +344,66 @@ export default function ChefBook() {
   const userName = session ? dispName(session) : isGuest ? 'Ospite' : '';
 
   // ── Navigazione basata su hash per aiutare l'autofill ──
+  const [navHistory, setNavHistory] = useState<string[]>(['login']);
+  const isStandalone = typeof window !== 'undefined' && (window.navigator as any).standalone === true;
+
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.slice(1); // rimuove #
+      const hash = window.location.hash.slice(1) || 'login';
       if (hash && hash !== view) {
         setView(hash);
+        // Aggiorna cronologia navigazione solo se non è un back dal browser
+        setNavHistory(prev => prev[prev.length - 1] !== hash ? [...prev, hash] : prev);
       }
     };
 
     const updateHash = () => {
-      if (window.location.hash.slice(1) !== view) {
+      const currentHash = window.location.hash.slice(1) || 'login';
+      if (currentHash !== view) {
         window.history.replaceState(null, '', `#${view}`);
       }
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    updateHash(); // aggiorna hash iniziale
+    // Gestisci il pulsante back del browser/sistema
+    const handlePopState = (e: PopStateEvent) => {
+      if (isStandalone) {
+        e.preventDefault();
+        // In modalità standalone, usa la nostra navigazione invece del browser back
+        goBack();
+      }
+    };
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [view]);
+    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handlePopState);
+    updateHash();
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [view, navHistory, isStandalone]);
 
   const navigateTo = (newView: string) => {
     setView(newView);
-    window.history.replaceState(null, '', `#${newView}`);
+    setNavHistory(prev => [...prev, newView]);
+    window.history.pushState(null, '', `#${newView}`);
+  };
+
+  const goBack = () => {
+    if (navHistory.length > 1) {
+      const prevView = navHistory[navHistory.length - 2];
+      setView(prevView);
+      setNavHistory(prev => prev.slice(0, -1));
+      // In standalone mode, usa replaceState invece di back per evitare di chiudere l'app
+      if (isStandalone) {
+        window.history.replaceState(null, '', `#${prevView}`);
+      } else {
+        window.history.back();
+      }
+    } else if (isStandalone && view !== 'home') {
+      // Se siamo in standalone e non abbiamo cronologia, vai alla home
+      navigateTo('home');
+    }
   };
 
   const loadRecipes = async (token?: string, quiet = false) => {
@@ -844,6 +881,23 @@ const filtered = recipes
       <style>{css}</style>
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); setReqEmail(''); setReqName(''); setReqMsg(''); navigateTo('request_form'); }} c={c} A={A} />
       <div style={A.hdr}>
+        {isStandalone && view !== 'home' && view !== 'login' && (
+          <button
+            onClick={goBack}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: c.accent,
+              fontSize: 18,
+              cursor: 'pointer',
+              padding: '8px',
+              marginRight: 8
+            }}
+            aria-label="Torna indietro"
+          >
+            ←
+          </button>
+        )}
         <div style={A.logo}>👨‍🍳 Chef's Book</div>
         <div className="dsk" style={{ alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
           <input style={{ ...A.inp, maxWidth: 200, padding: '7px 12px', fontSize: 13 }} placeholder="🔍 Cerca ricetta..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -965,7 +1019,7 @@ const filtered = recipes
         <style>{css}</style>
         <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} session={session} isGuest={isGuest} isAdmin={isAdminUser} onLogout={handleLogout} onProfile={goProfile} onAdminPanel={goAdmin} onRequestForm={() => { setReqSent(false); navigateTo('request_form'); }} c={c} A={A} />
         <div style={A.hdr}>
-          <button className="hbtn" style={A.btnO} onClick={() => setView('home')}>← Ricette</button>
+          <button className="hbtn" style={A.btnO} onClick={goBack}>← Ricette</button>
           <div className="dacts" style={{ display: 'flex', gap: 8 }}>
             {ce && <><button className="hbtn" style={A.btnO} onClick={() => duplicateRecipe(r)}>⧉ Duplica</button><button className="hbtn" style={A.btnO} onClick={() => editRecipe(r)}>✏️ Modifica</button><button className="hbtn" style={A.btnR} onClick={() => { if (window.confirm(`Eliminare "${r.title}"?`)) handleDelete(r.id); }}>🗑</button></>}
             {!ce && !isGuest && <span style={{ fontSize: 12, color: c.muted, display: 'flex', alignItems: 'center' }}>🔒 Sola lettura</span>}
@@ -1047,7 +1101,7 @@ const filtered = recipes
     <div style={A.wrap}>
       <style>{css}</style>
       <div style={A.hdr}>
-        <button className="hbtn" style={A.btnO} onClick={handleCancelForm}>← Annulla</button>
+        <button className="hbtn" style={A.btnO} onClick={goBack}>← Annulla</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>{form.id ? 'Modifica ricetta' : 'Nuova ricetta'}</div>
           <span style={{ fontSize: 11, color: c.muted }}>
@@ -1155,7 +1209,7 @@ const filtered = recipes
     <div style={A.wrap}>
       <style>{css}</style>
       <div style={A.hdr}>
-        <button className="hbtn" style={A.btnO} onClick={() => setView('home')}>← Indietro</button>
+        <button className="hbtn" style={A.btnO} onClick={goBack}>← Indietro</button>
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>Il mio profilo</div>
         <MBtn />
       </div>
@@ -1195,7 +1249,7 @@ const filtered = recipes
       <div style={A.wrap}>
         <style>{css}</style>
         <div style={A.hdr}>
-          <button className="hbtn" style={A.btnO} onClick={() => setView('home')}>← Indietro</button>
+          <button className="hbtn" style={A.btnO} onClick={goBack}>← Indietro</button>
           <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>🛡️ Pannello Admin</div>
           <MBtn />
         </div>
@@ -1308,7 +1362,7 @@ const filtered = recipes
     <div style={A.wrap}>
       <style>{css}</style>
       <div style={A.hdr}>
-        <button className="hbtn" style={A.btnO} onClick={() => setView(session || isGuest ? 'home' : 'login')}>← Indietro</button>
+        <button className="hbtn" style={A.btnO} onClick={goBack}>← Indietro</button>
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.accent, fontWeight: 600 }}>Richiesta account</div>
         <MBtn />
       </div>
