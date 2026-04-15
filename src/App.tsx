@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties, KeyboardEvent, ChangeEvent } from "react";
 
+// ─── CREDENTIAL MANAGEMENT API ────────────────────────────────────
+declare global {
+  interface Window {
+    PasswordCredential?: new (data: { id: string; password: string; name?: string }) => Credential;
+  }
+}
+
 // ─── CONFIGURAZIONE SUPABASE ───────────────────────────────────────
 const SUPABASE_URL = 'https://eotxguvsrgbrgdaxhfwz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdHhndXZzcmdicmdkYXhoZnd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjY3ODMsImV4cCI6MjA4ODgwMjc4M30.GthcPCt_JyxFpK0AWGVnEr2cqjjLx7bnKcvm-FtKuU4';
@@ -445,6 +452,20 @@ useEffect(() => {
     setLoginLoading(true); setError('');
     const { session: s, error: err } = await authApi.signIn(email.trim(), pw);
     if (err || !s) { setError(err || 'Errore'); setLoginLoading(false); return; }
+
+    // ── Salva le credenziali nel portachiavi del browser/iOS ──
+    if ('PasswordCredential' in window && navigator.credentials) {
+      try {
+        const cred = new (window as any).PasswordCredential({
+          id: email.trim(),
+          password: pw,
+          name: s.user.user_metadata?.display_name || email.trim(),
+        });
+        await navigator.credentials.store(cred);
+      } catch {}
+    }
+    // ─────────────────────────────────────────────────────────
+
     const info = await db.users.getOne(s.user.id, s.access_token);
     localStorage.setItem('cb-session', JSON.stringify(s));
     setSession(s); setIsGuest(false); setIsAdminUser(info?.is_admin || false);
