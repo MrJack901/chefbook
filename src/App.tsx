@@ -27,7 +27,6 @@ interface AccountRequest { id: string; email: string; display_name: string; mess
 interface MetaItem { icon: string; label: string; value: string; accent?: boolean }
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-const [sortBy, setSortBy] = useState<'date' | 'title' | 'author'>('date');
 
 const dispName = (sess: Session) => sess.user.user_metadata?.display_name || sess.user.email.split('@')[0];
 
